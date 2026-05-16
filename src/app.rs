@@ -19,12 +19,21 @@ pub struct PeterMathApp {
     prefer_gpu_lenia: bool,
     running: bool,
     judge_mode: bool,
+    brush_mode: BrushMode,
+    brush_radius: f32,
+    brush_strength: f32,
     steps_per_frame: usize,
     step_count: u64,
     pixels: Vec<u8>,
     texture: Option<TextureHandle>,
     status: String,
     last_tick: Instant,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BrushMode {
+    Draw,
+    Erase,
 }
 
 impl PeterMathApp {
@@ -56,6 +65,9 @@ impl PeterMathApp {
             prefer_gpu_lenia: gpu_ready,
             running: true,
             judge_mode: false,
+            brush_mode: BrushMode::Draw,
+            brush_radius: 9.0,
+            brush_strength: 0.42,
             steps_per_frame: 1,
             step_count: 0,
             pixels: vec![0; width * width * 4],
@@ -190,10 +202,10 @@ impl PeterMathApp {
         let png_path = format!("{}_snapshot.png", stem);
         let json_path = format!("{}_parameters.json", stem);
         let result = (|| -> anyhow::Result<()> {
-            let (size, field) = gpu.read_field_blocking()?;
+            let (size, field, previous) = gpu.read_fields_blocking()?;
             let mut pixels = vec![0; size * size * 4];
-            gpu::colorize_field(&field, size, self.render_style, &mut pixels);
-            let metrics = Metrics::from_scalar_grid(&field, None, size, size);
+            gpu::colorize_fields(&field, &previous, size, self.render_style, &mut pixels);
+            let metrics = Metrics::from_scalar_grid(&field, Some(&previous), size, size);
             export::save_png(&png_path, size, size, &pixels)?;
             export::save_json(
                 &json_path,
@@ -234,13 +246,64 @@ impl PeterMathApp {
             let (w, h) = self.lenia.size();
             gpu.reset_from_cpu(
                 self.lenia.field(),
-                w,
-                h,
+                self.lenia.previous_field(),
+                (w, h),
                 self.lenia.kernel_entries(),
                 lenia_params(&self.lenia),
                 self.render_style,
             );
         }
+    }
+
+    fn clear_lenia_field(&mut self) {
+        self.lenia.clear();
+        self.step_count = 0;
+        self.sync_gpu_lenia_from_cpu();
+        self.status = "Cleared the Lenia field; draw or choose New seed to continue.".to_owned();
+    }
+
+    fn new_lenia_seed(&mut self) {
+        let next_seed = self
+            .lenia
+            .seed
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        self.lenia.reseed(next_seed);
+        self.step_count = 0;
+        self.sync_gpu_lenia_from_cpu();
+        self.status = format!("Loaded deterministic Lenia seed {next_seed}.");
+    }
+
+    fn apply_lenia_brush(&mut self, rect: egui::Rect, response: &egui::Response) {
+        if self.mode != SimMode::Lenia {
+            return;
+        }
+        if !(response.clicked_by(egui::PointerButton::Primary)
+            || response.dragged_by(egui::PointerButton::Primary))
+        {
+            return;
+        }
+        let Some(pos) = response.interact_pointer_pos() else {
+            return;
+        };
+        if !rect.contains(pos) {
+            return;
+        }
+
+        let (w, h) = self.lenia.size();
+        let x = ((pos.x - rect.min.x) / rect.width() * w as f32).clamp(0.0, w as f32 - 1.0);
+        let y = ((pos.y - rect.min.y) / rect.height() * h as f32).clamp(0.0, h as f32 - 1.0);
+        match self.brush_mode {
+            BrushMode::Draw => {
+                self.lenia
+                    .paint_brush(x, y, self.brush_radius, self.brush_strength);
+            }
+            BrushMode::Erase => {
+                self.lenia
+                    .erase_brush(x, y, self.brush_radius, self.brush_strength);
+            }
+        }
+        self.sync_gpu_lenia_from_cpu();
     }
 
     fn parameter_json(&self) -> serde_json::Value {
@@ -306,7 +369,7 @@ impl PeterMathApp {
         } else {
             ui.label("GPU high-quality Lenia: unavailable");
         }
-        ui.add(egui::Slider::new(&mut self.steps_per_frame, 1..=20).text("simulation tempo"));
+        ui.add(egui::Slider::new(&mut self.steps_per_frame, 1..=20).text("evolution rate"));
 
         ui.horizontal(|ui| {
             if ui
@@ -332,6 +395,25 @@ impl PeterMathApp {
             }
         });
 
+        if self.mode == SimMode::Lenia {
+            ui.separator();
+            ui.heading("Field Brush");
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut self.brush_mode, BrushMode::Draw, "Draw");
+                ui.selectable_value(&mut self.brush_mode, BrushMode::Erase, "Erase");
+            });
+            ui.add(egui::Slider::new(&mut self.brush_radius, 1.0..=32.0).text("brush radius"));
+            ui.add(egui::Slider::new(&mut self.brush_strength, 0.05..=1.0).text("brush strength"));
+            ui.horizontal(|ui| {
+                if ui.button("Clear field").clicked() {
+                    self.clear_lenia_field();
+                }
+                if ui.button("New seed").clicked() {
+                    self.new_lenia_seed();
+                }
+            });
+        }
+
         if ui.button("Export snapshot + parameters").clicked() {
             self.export_snapshot();
         }
@@ -344,6 +426,13 @@ impl PeterMathApp {
         ui.label(format!("Seed: {}", self.active_seed()));
         ui.label(format!("Step: {}", self.step_count));
         ui.label(format!("Frame: {}", self.mode_statement()));
+        let m = self.active_metrics();
+        ui.label(format!("Active pixels: {}", m.active));
+        ui.label(format!("Mass {:.3} · Entropy {:.3}", m.mass, m.entropy));
+        ui.label(format!(
+            "Stability {:.3} · Vitality {:.3}",
+            m.stability, m.vitality
+        ));
         ui.label(&self.status);
     }
 
@@ -522,15 +611,16 @@ impl eframe::App for PeterMathApp {
             ui.vertical_centered(|ui| {
                 ui.add_space(8.0);
                 if self.gpu_lenia_active() {
-                    if let Some(gpu) = &self.gpu_lenia {
-                        gpu.update_params(lenia_params(&self.lenia), self.render_style);
-                        egui::Frame::canvas(ui.style()).show(ui, |ui| {
-                            let (rect, _response) =
-                                ui.allocate_exact_size(size, egui::Sense::hover());
+                    egui::Frame::canvas(ui.style()).show(ui, |ui| {
+                        let (rect, response) =
+                            ui.allocate_exact_size(size, egui::Sense::click_and_drag());
+                        if let Some(gpu) = self.gpu_lenia.as_ref() {
+                            gpu.update_params(lenia_params(&self.lenia), self.render_style);
                             ui.painter()
                                 .add(egui::Shape::Callback(gpu.paint_callback(rect)));
-                        });
-                    }
+                        }
+                        self.apply_lenia_brush(rect, &response);
+                    });
                 } else {
                     let (w, h) = self.render_active();
                     let image = ColorImage::from_rgba_unmultiplied([w, h], &self.pixels);
@@ -544,8 +634,20 @@ impl eframe::App for PeterMathApp {
                         ));
                     }
                     if let Some(texture) = &self.texture {
+                        let texture_id = texture.id();
                         egui::Frame::canvas(ui.style()).show(ui, |ui| {
-                            ui.image((texture.id(), size));
+                            let (rect, response) =
+                                ui.allocate_exact_size(size, egui::Sense::click_and_drag());
+                            ui.painter().image(
+                                texture_id,
+                                rect,
+                                egui::Rect::from_min_max(
+                                    egui::Pos2::ZERO,
+                                    egui::Pos2::new(1.0, 1.0),
+                                ),
+                                Color32::WHITE,
+                            );
+                            self.apply_lenia_brush(rect, &response);
                         });
                     }
                 }

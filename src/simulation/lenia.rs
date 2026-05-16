@@ -46,6 +46,10 @@ impl LeniaSim {
         &self.field
     }
 
+    pub fn previous_field(&self) -> &[f32] {
+        &self.previous
+    }
+
     pub fn kernel_entries(&self) -> &[(isize, isize, f32)] {
         &self.kernel
     }
@@ -107,6 +111,56 @@ impl LeniaSim {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.field.fill(0.0);
+        self.previous.fill(0.0);
+        self.next.fill(0.0);
+    }
+
+    pub fn reseed(&mut self, seed: u64) {
+        self.seed = seed;
+        self.reset_preset("orbital_field");
+    }
+
+    pub fn paint_brush(&mut self, x: f32, y: f32, radius: f32, strength: f32) {
+        self.apply_brush(x, y, radius, strength.clamp(0.0, 1.0), 1.0);
+    }
+
+    pub fn erase_brush(&mut self, x: f32, y: f32, radius: f32, strength: f32) {
+        self.apply_brush(x, y, radius, strength.clamp(0.0, 1.0), -1.0);
+    }
+
+    fn apply_brush(&mut self, x: f32, y: f32, radius: f32, strength: f32, direction: f32) {
+        if radius <= 0.0 || strength <= 0.0 {
+            return;
+        }
+
+        self.previous.copy_from_slice(&self.field);
+        let radius = radius.max(0.5);
+        let sigma2 = 2.0 * (radius * 0.45).max(0.5).powi(2);
+        let extent = radius.ceil() as isize;
+        let cx = x.round() as isize;
+        let cy = y.round() as isize;
+
+        for dy in -extent..=extent {
+            for dx in -extent..=extent {
+                let d2 = (dx * dx + dy * dy) as f32;
+                if d2 > radius * radius {
+                    continue;
+                }
+                let idx = wrap_index(cx + dx, cy + dy, self.w, self.h);
+                let falloff = (-d2 / sigma2).exp();
+                let amount = (strength * falloff).clamp(0.0, 1.0);
+                self.field[idx] = if direction > 0.0 {
+                    self.field[idx] + amount * (1.0 - self.field[idx])
+                } else {
+                    self.field[idx] * (1.0 - amount)
+                }
+                .clamp(0.0, 1.0);
+            }
+        }
+    }
+
     fn add_blob(&mut self, cx: f32, cy: f32, sigma: f32, amplitude: f32) {
         let r = (sigma * 3.0) as isize;
         for dy in -r..=r {
@@ -157,7 +211,12 @@ impl LeniaSim {
                         let gy = self.field[wrap_index(x as isize, y as isize + 1, self.w, self.h)]
                             - self.field[wrap_index(x as isize, y as isize - 1, self.w, self.h)];
                         let edge = (gx * gx + gy * gy).sqrt() * 3.0;
-                        palette::life_field((v * 1.30).clamp(0.0, 1.0), edge, v)
+                        palette::life_field_delta(
+                            (v * 1.30).clamp(0.0, 1.0),
+                            edge,
+                            v,
+                            v - self.previous[i],
+                        )
                     }
                 };
                 out[i * 4..i * 4 + 4].copy_from_slice(&rgba);

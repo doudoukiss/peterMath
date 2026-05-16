@@ -11,18 +11,28 @@ pub fn scientific(v: f32) -> [u8; 4] {
     [to_u8(r), to_u8(g), to_u8(b), 255]
 }
 
-pub fn life_field(v: f32, edge: f32, contour_phase: f32) -> [u8; 4] {
+pub fn life_field_delta(v: f32, edge: f32, contour_phase: f32, delta: f32) -> [u8; 4] {
     let x = v.clamp(0.0, 1.0);
     let ridge = smooth(0.015, 0.18, edge);
     let contour_distance = ((contour_phase * 19.0).fract() - 0.5).abs();
     let contour = 1.0 - smooth(0.025, 0.17, contour_distance);
     let glow = smooth(0.03, 0.82, x);
     let core = smooth(0.58, 1.00, x);
+    let birth = smooth(0.002, 0.060, delta.max(0.0));
+    let decay = smooth(0.002, 0.060, (-delta).max(0.0));
 
     [
-        to_u8(0.020 + 0.18 * glow + 0.72 * core + 0.22 * contour),
-        to_u8(0.040 + 0.45 * glow + 0.18 * core + 0.38 * contour + 0.12 * ridge),
-        to_u8(0.060 + 0.42 * glow + 0.10 * core + 0.18 * contour + 0.34 * ridge),
+        to_u8(0.018 + 0.14 * glow + 0.70 * core + 0.24 * contour + 0.46 * decay),
+        to_u8(0.034 + 0.48 * glow + 0.16 * core + 0.42 * contour + 0.16 * ridge + 0.30 * birth),
+        to_u8(
+            0.054
+                + 0.48 * glow
+                + 0.10 * core
+                + 0.22 * contour
+                + 0.36 * ridge
+                + 0.34 * birth
+                + 0.18 * decay,
+        ),
         255,
     ]
 }

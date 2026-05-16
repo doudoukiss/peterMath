@@ -30,6 +30,7 @@ struct GpuLeniaShared {
     kernel: wgpu::Buffer,
     params: wgpu::Buffer,
     readback: wgpu::Buffer,
+    readback_previous: wgpu::Buffer,
     compute_pipeline: wgpu::ComputePipeline,
     render_pipeline: wgpu::RenderPipeline,
     compute_a_to_b: wgpu::BindGroup,
@@ -42,6 +43,7 @@ struct GpuLeniaShared {
     render_style: RenderStyle,
     pending_steps: u32,
     pending_field: Option<Vec<f32>>,
+    pending_previous: Option<Vec<f32>>,
     pending_kernel: Option<Vec<KernelEntry>>,
 }
 
@@ -94,6 +96,12 @@ impl GpuLeniaArt {
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
+        let readback_previous = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("peterMath GPU Lenia previous readback"),
+            size: field_size,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
 
         let kernel_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("peterMath GPU Lenia kernel"),
@@ -132,7 +140,8 @@ impl GpuLeniaArt {
             label: Some("peterMath GPU Lenia render layout"),
             entries: &[
                 storage_entry(0, true, wgpu::ShaderStages::FRAGMENT),
-                uniform_entry(1, wgpu::ShaderStages::FRAGMENT),
+                storage_entry(1, true, wgpu::ShaderStages::FRAGMENT),
+                uniform_entry(2, wgpu::ShaderStages::FRAGMENT),
             ],
         });
 
@@ -214,6 +223,7 @@ impl GpuLeniaArt {
             &device,
             &render_layout,
             &field_a,
+            &field_b,
             &params_buffer,
             "peterMath GPU Lenia render A",
         );
@@ -221,6 +231,7 @@ impl GpuLeniaArt {
             &device,
             &render_layout,
             &field_b,
+            &field_a,
             &params_buffer,
             "peterMath GPU Lenia render B",
         );
@@ -235,6 +246,7 @@ impl GpuLeniaArt {
                 kernel: kernel_buffer,
                 params: params_buffer,
                 readback,
+                readback_previous,
                 compute_pipeline,
                 render_pipeline,
                 compute_a_to_b,
@@ -247,6 +259,7 @@ impl GpuLeniaArt {
                 render_style,
                 pending_steps: 0,
                 pending_field: None,
+                pending_previous: None,
                 pending_kernel: None,
             })),
         })
@@ -275,8 +288,8 @@ impl GpuLeniaArt {
     pub fn reset_from_cpu(
         &self,
         field: &[f32],
-        source_width: usize,
-        source_height: usize,
+        previous: &[f32],
+        source_size: (usize, usize),
         kernel: &[(isize, isize, f32)],
         params: GpuLeniaParams,
         render_style: RenderStyle,
@@ -284,8 +297,14 @@ impl GpuLeniaArt {
         if let Ok(mut shared) = self.shared.lock() {
             shared.pending_field = Some(upscale_field(
                 field,
-                source_width,
-                source_height,
+                source_size.0,
+                source_size.1,
+                shared.size as usize,
+            ));
+            shared.pending_previous = Some(upscale_field(
+                previous,
+                source_size.0,
+                source_size.1,
                 shared.size as usize,
             ));
             shared.pending_kernel = Some(pack_kernel(kernel));
@@ -304,8 +323,8 @@ impl GpuLeniaArt {
         )
     }
 
-    pub fn read_field_blocking(&self) -> anyhow::Result<(usize, Vec<f32>)> {
-        let (size, readback) = {
+    pub fn read_fields_blocking(&self) -> anyhow::Result<(usize, Vec<f32>, Vec<f32>)> {
+        let (size, readback, readback_previous) = {
             let mut shared = self
                 .shared
                 .lock()
@@ -324,33 +343,57 @@ impl GpuLeniaArt {
             } else {
                 shared.field_b.clone()
             };
+            let previous = if shared.current_is_a {
+                shared.field_b.clone()
+            } else {
+                shared.field_a.clone()
+            };
             let size = shared.size as usize;
             let readback = shared.readback.clone();
+            let readback_previous = shared.readback_previous.clone();
             encoder.copy_buffer_to_buffer(&source, 0, &readback, 0, (size * size * 4) as u64);
+            encoder.copy_buffer_to_buffer(
+                &previous,
+                0,
+                &readback_previous,
+                0,
+                (size * size * 4) as u64,
+            );
             self.queue.submit(Some(encoder.finish()));
 
-            (size, readback)
+            (size, readback, readback_previous)
         };
 
-        let slice = readback.slice(..);
-        let (tx, rx) = mpsc::channel();
-        slice.map_async(wgpu::MapMode::Read, move |result| {
-            let _ = tx.send(result);
-        });
-        let _ = self.device.poll(wgpu::Maintain::Wait);
-        rx.recv()
-            .map_err(|_| anyhow::anyhow!("GPU Lenia readback callback failed"))?
-            .map_err(|err| anyhow::anyhow!("GPU Lenia readback failed: {err:?}"))?;
-
-        let mapped = slice.get_mapped_range();
-        let mut values = Vec::with_capacity(size * size);
-        for chunk in mapped.chunks_exact(4) {
-            values.push(f32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
-        }
-        drop(mapped);
-        readback.unmap();
-        Ok((size, values))
+        let values = read_mapped_f32(&self.device, &readback, size, "current")?;
+        let previous_values = read_mapped_f32(&self.device, &readback_previous, size, "previous")?;
+        Ok((size, values, previous_values))
     }
+}
+
+fn read_mapped_f32(
+    device: &wgpu::Device,
+    buffer: &wgpu::Buffer,
+    size: usize,
+    label: &str,
+) -> anyhow::Result<Vec<f32>> {
+    let slice = buffer.slice(..);
+    let (tx, rx) = mpsc::channel();
+    slice.map_async(wgpu::MapMode::Read, move |result| {
+        let _ = tx.send(result);
+    });
+    let _ = device.poll(wgpu::Maintain::Wait);
+    rx.recv()
+        .map_err(|_| anyhow::anyhow!("GPU Lenia {label} readback callback failed"))?
+        .map_err(|err| anyhow::anyhow!("GPU Lenia {label} readback failed: {err:?}"))?;
+
+    let mapped = slice.get_mapped_range();
+    let mut values = Vec::with_capacity(size * size);
+    for chunk in mapped.chunks_exact(4) {
+        values.push(f32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
+    }
+    drop(mapped);
+    buffer.unmap();
+    Ok(values)
 }
 
 struct LeniaPaintCallback {
@@ -397,9 +440,14 @@ impl egui_wgpu::CallbackTrait for LeniaPaintCallback {
 
 fn apply_pending_updates(shared: &mut GpuLeniaShared, queue: &wgpu::Queue) {
     if let Some(field) = shared.pending_field.take() {
+        let previous = shared
+            .pending_previous
+            .take()
+            .unwrap_or_else(|| field.clone());
         let bytes = f32_bytes(&field);
+        let previous_bytes = f32_bytes(&previous);
         queue.write_buffer(&shared.field_a, 0, &bytes);
-        queue.write_buffer(&shared.field_b, 0, &bytes);
+        queue.write_buffer(&shared.field_b, 0, &previous_bytes);
         shared.current_is_a = true;
     }
 
@@ -448,7 +496,13 @@ fn dispatch_pending_steps(
     }
 }
 
-pub fn colorize_field(field: &[f32], size: usize, render_style: RenderStyle, out: &mut [u8]) {
+pub fn colorize_fields(
+    field: &[f32],
+    previous: &[f32],
+    size: usize,
+    render_style: RenderStyle,
+    out: &mut [u8],
+) {
     for y in 0..size {
         for x in 0..size {
             let i = y * size + x;
@@ -461,7 +515,13 @@ pub fn colorize_field(field: &[f32], size: usize, render_style: RenderStyle, out
                     let gy = field[((y + 1) % size) * size + x]
                         - field[((y + size - 1) % size) * size + x];
                     let edge = (gx * gx + gy * gy).sqrt() * 3.0;
-                    palette::life_field((value * 1.30).clamp(0.0, 1.0), edge, value)
+                    let prior = previous.get(i).copied().unwrap_or(value);
+                    palette::life_field_delta(
+                        (value * 1.30).clamp(0.0, 1.0),
+                        edge,
+                        value,
+                        value - prior,
+                    )
                 }
             };
             out[i * 4..i * 4 + 4].copy_from_slice(&rgba);
@@ -551,14 +611,19 @@ fn compute_bind_group(
 fn render_bind_group(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
-    field: &wgpu::Buffer,
+    current: &wgpu::Buffer,
+    previous: &wgpu::Buffer,
     params: &wgpu::Buffer,
     label: &'static str,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some(label),
         layout,
-        entries: &[buffer_entry(0, field), buffer_entry(1, params)],
+        entries: &[
+            buffer_entry(0, current),
+            buffer_entry(1, previous),
+            buffer_entry(2, params),
+        ],
     })
 }
 
@@ -690,7 +755,8 @@ struct VertexOut {
 }
 
 @group(0) @binding(0) var<storage, read> field: array<f32>;
-@group(0) @binding(1) var<uniform> params: Params;
+@group(0) @binding(1) var<storage, read> previous_field: array<f32>;
+@group(0) @binding(2) var<uniform> params: Params;
 
 @vertex
 fn vs_main(@builtin(vertex_index) index: u32) -> VertexOut {
@@ -718,17 +784,19 @@ fn smooth_step(edge0: f32, edge1: f32, x: f32) -> f32 {
     return t * t * (3.0 - 2.0 * t);
 }
 
-fn life_palette(value: f32, edge: f32) -> vec3<f32> {
+fn life_palette(value: f32, edge: f32, delta: f32) -> vec3<f32> {
     let x = clamp(value, 0.0, 1.0);
     let ridge = smooth_step(0.015, 0.18, edge);
     let contour_distance = abs(fract(x * 19.0) - 0.5);
     let contour = 1.0 - smooth_step(0.025, 0.17, contour_distance);
     let glow = smooth_step(0.03, 0.82, x);
     let core = smooth_step(0.58, 1.0, x);
+    let birth = smooth_step(0.002, 0.060, max(delta, 0.0));
+    let decay = smooth_step(0.002, 0.060, max(-delta, 0.0));
     return vec3<f32>(
-        0.020 + 0.18 * glow + 0.72 * core + 0.22 * contour,
-        0.040 + 0.45 * glow + 0.18 * core + 0.38 * contour + 0.12 * ridge,
-        0.060 + 0.42 * glow + 0.10 * core + 0.18 * contour + 0.34 * ridge
+        0.018 + 0.14 * glow + 0.70 * core + 0.24 * contour + 0.46 * decay,
+        0.034 + 0.48 * glow + 0.16 * core + 0.42 * contour + 0.16 * ridge + 0.30 * birth,
+        0.054 + 0.48 * glow + 0.10 * core + 0.22 * contour + 0.36 * ridge + 0.34 * birth + 0.18 * decay
     );
 }
 
@@ -746,7 +814,8 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let gx = sample_field(x + 1, y) - sample_field(x - 1, y);
     let gy = sample_field(x, y + 1) - sample_field(x, y - 1);
     let edge = sqrt(gx * gx + gy * gy) * 3.0;
-    let color = clamp(life_palette(value * 1.3, edge), vec3<f32>(0.0), vec3<f32>(1.0));
+    let index = u32(y) * params.size + u32(x);
+    let color = clamp(life_palette(value * 1.3, edge, value - previous_field[index]), vec3<f32>(0.0), vec3<f32>(1.0));
     return vec4<f32>(color, 1.0);
 }
 "#;
