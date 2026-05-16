@@ -1,0 +1,14 @@
+/target/
+
+# Local run/export artifacts
+peterMath_*_snapshot.png
+peterMath_*_parameters.json
+peterMath_exports/
+dist/
+
+# OS/editor noise
+.DS_Store
+.idea/
+.vscode/
+.playwright-cli/
+*.swp

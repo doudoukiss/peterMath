@@ -1,0 +1,54 @@
+{
+  "project": "peterMath",
+  "description": "Deterministic presets for mathematical life-system experiments.",
+  "presets": [
+    {
+      "mode": "Lenia",
+      "name": "Orbital Field",
+      "seed": 1001,
+      "parameters": {
+        "radius": 12,
+        "growth_center": 0.33,
+        "growth_width": 0.055,
+        "dt": 0.055
+      }
+    },
+    {
+      "mode": "Lenia",
+      "name": "Soft Bloom",
+      "seed": 1002,
+      "parameters": {
+        "radius": 16,
+        "growth_center": 0.29,
+        "growth_width": 0.07,
+        "dt": 0.045
+      }
+    },
+    {
+      "mode": "Reaction-Diffusion",
+      "name": "Mitosis",
+      "seed": 2001,
+      "parameters": {
+        "feed": 0.0367,
+        "kill": 0.0649
+      }
+    },
+    {
+      "mode": "Reaction-Diffusion",
+      "name": "Labyrinth",
+      "seed": 2002,
+      "parameters": {
+        "feed": 0.029,
+        "kill": 0.057
+      }
+    },
+    {
+      "mode": "Game of Life",
+      "name": "Symmetric Seed",
+      "seed": 3001,
+      "parameters": {
+        "rule": "B3/S23"
+      }
+    }
+  ]
+}

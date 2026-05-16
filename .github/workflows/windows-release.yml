@@ -1,0 +1,48 @@
+name: Build peterMath Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build-windows:
+    name: Windows x64 release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Prepare artifact folder
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist\peterMath_windows_submission | Out-Null
+          Copy-Item target\release\peterMath.exe dist\peterMath_windows_submission\peterMath.exe
+          Copy-Item README.md dist\peterMath_windows_submission\README_PROJECT.md
+          if (Test-Path judge_submission_template) {
+            Copy-Item judge_submission_template\* dist\peterMath_windows_submission\ -Recurse -Force
+          }
+          if (Test-Path web_html) {
+            Copy-Item web_html dist\peterMath_windows_submission\web_html -Recurse -Force
+          }
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: peterMath-windows-x64
+          path: dist\peterMath_windows_submission
