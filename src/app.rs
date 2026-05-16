@@ -7,7 +7,7 @@ use crate::simulation::life::{LifeRlePattern, LifeSim, LifeStateHash, PatternDet
 use crate::simulation::reaction_diffusion::ReactionDiffusionSim;
 use crate::simulation::{RenderStyle, SimMode};
 use egui::{Color32, ColorImage, TextureHandle, TextureOptions};
-use serde_json::json;
+use serde_json::{json, Value};
 use std::time::{Duration, Instant};
 
 const HISTORY_LIMIT: usize = 32;
@@ -148,6 +148,13 @@ struct RuleVariantComparison {
     height: usize,
     baseline_pixels: Vec<u8>,
     variant_pixels: Vec<u8>,
+}
+
+struct GpuLeniaExportState {
+    size: usize,
+    pixels: Vec<u8>,
+    metrics: Metrics,
+    parameters: Value,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -627,19 +634,7 @@ impl PeterMathApp {
 
     fn population_phase_analysis(&self) -> PopulationPhaseAnalysis {
         let current = self.active_metrics();
-        let previous = self
-            .metric_history
-            .iter()
-            .rev()
-            .nth(1)
-            .map(|sample| Metrics {
-                mass: sample.mass,
-                entropy: sample.entropy,
-                symmetry: current.symmetry,
-                stability: sample.stability,
-                vitality: sample.vitality,
-                active: current.active,
-            });
+        let previous = self.previous_metric_history(current);
         let label = match self.mode {
             SimMode::Lenia => self.lenia_phase().label(),
             SimMode::ReactionDiffusion => {
@@ -650,7 +645,32 @@ impl PeterMathApp {
             }
             SimMode::GameOfLife => "discrete",
         };
-        analysis::population_phase_analysis(label, current, previous, self.active_region())
+        self.population_phase_from(label, current, self.active_region())
+    }
+
+    fn previous_metric_history(&self, current: Metrics) -> Option<Metrics> {
+        self.metric_history
+            .iter()
+            .rev()
+            .nth(1)
+            .map(|sample| Metrics {
+                mass: sample.mass,
+                entropy: sample.entropy,
+                symmetry: current.symmetry,
+                stability: sample.stability,
+                vitality: sample.vitality,
+                active: current.active,
+            })
+    }
+
+    fn population_phase_from(
+        &self,
+        label: &'static str,
+        current: Metrics,
+        active_region: ActiveRegionAnalysis,
+    ) -> PopulationPhaseAnalysis {
+        let previous = self.previous_metric_history(current);
+        analysis::population_phase_analysis(label, current, previous, active_region)
     }
 
     fn life_pattern_report(&self) -> PatternDetectionReport {
@@ -778,6 +798,37 @@ impl PeterMathApp {
         };
     }
 
+    fn gpu_lenia_export_state(&self, gpu: &GpuLeniaArt) -> anyhow::Result<GpuLeniaExportState> {
+        let (size, field, previous) = gpu.read_fields_blocking()?;
+        let mut pixels = vec![0; size * size * 4];
+        gpu::colorize_fields(&field, &previous, size, self.render_style, &mut pixels);
+        let metrics = Metrics::from_scalar_grid(&field, Some(&previous), size, size);
+        let active_region = analysis::active_region_from_scalar_grid(
+            &field,
+            size,
+            size,
+            0.08,
+            self.previous_centroid(),
+        );
+        let mass_trend = self
+            .previous_metric_history(metrics)
+            .map(|previous| metrics.mass - previous.mass)
+            .unwrap_or_default();
+        let phase = self.population_phase_from(
+            LeniaPhase::from_metrics(metrics, mass_trend).label(),
+            metrics,
+            active_region,
+        );
+        let parameters = self.lenia_parameter_json(active_region, phase);
+
+        Ok(GpuLeniaExportState {
+            size,
+            pixels,
+            metrics,
+            parameters,
+        })
+    }
+
     fn export_gpu_lenia_snapshot(&mut self) {
         self.update_performance_metadata();
         let Some(gpu) = &self.gpu_lenia else {
@@ -793,11 +844,13 @@ impl PeterMathApp {
         let png_path = format!("{}_snapshot.png", stem);
         let json_path = format!("{}_parameters.json", stem);
         let result = (|| -> anyhow::Result<()> {
-            let (size, field, previous) = gpu.read_fields_blocking()?;
-            let mut pixels = vec![0; size * size * 4];
-            gpu::colorize_fields(&field, &previous, size, self.render_style, &mut pixels);
-            let metrics = Metrics::from_scalar_grid(&field, Some(&previous), size, size);
-            export::save_png(&png_path, size, size, &pixels)?;
+            let export_state = self.gpu_lenia_export_state(gpu)?;
+            export::save_png(
+                &png_path,
+                export_state.size,
+                export_state.size,
+                &export_state.pixels,
+            )?;
             export::save_json(
                 &json_path,
                 export::SnapshotExport {
@@ -806,10 +859,10 @@ impl PeterMathApp {
                     backend: self.backend_label(),
                     seed: self.active_seed(),
                     step_count: self.step_count,
-                    grid_width: size,
-                    grid_height: size,
-                    parameters: self.parameter_json(),
-                    metrics,
+                    grid_width: export_state.size,
+                    grid_height: export_state.size,
+                    parameters: export_state.parameters,
+                    metrics: export_state.metrics,
                 },
             )?;
             Ok(())
@@ -822,22 +875,38 @@ impl PeterMathApp {
 
     fn export_share_state(&mut self) {
         self.update_performance_metadata();
-        let (w, h) = self.active_size();
-        let metrics = self.active_metrics();
-        let result = export::save_share_state(
-            "peterMath_share_state.json",
-            export::ShareStateExport {
-                mode: self.mode.label(),
-                render_style: self.render_style.label(),
-                backend: self.backend_label(),
-                seed: self.active_seed(),
-                step_count: self.step_count,
-                grid_width: w,
-                grid_height: h,
-                parameters: self.parameter_json(),
-                metrics,
-            },
-        );
+        let result = (|| -> anyhow::Result<()> {
+            let (w, h, metrics, parameters) = if self.gpu_lenia_active() {
+                let gpu = self
+                    .gpu_lenia
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("GPU Lenia is unavailable"))?;
+                let export_state = self.gpu_lenia_export_state(gpu)?;
+                (
+                    export_state.size,
+                    export_state.size,
+                    export_state.metrics,
+                    export_state.parameters,
+                )
+            } else {
+                let (w, h) = self.active_size();
+                (w, h, self.active_metrics(), self.parameter_json())
+            };
+            export::save_share_state(
+                "peterMath_share_state.json",
+                export::ShareStateExport {
+                    mode: self.mode.label(),
+                    render_style: self.render_style.label(),
+                    backend: self.backend_label(),
+                    seed: self.active_seed(),
+                    step_count: self.step_count,
+                    grid_width: w,
+                    grid_height: h,
+                    parameters,
+                    metrics,
+                },
+            )
+        })();
         self.status = match result {
             Ok(()) => "Exported peterMath_share_state.json.".to_owned(),
             Err(err) => format!("Share-state export failed: {err}"),
@@ -859,19 +928,28 @@ impl PeterMathApp {
         );
 
         let result = (|| -> anyhow::Result<export::EvidencePack> {
-            let (w, h, pixels, metrics) = if self.gpu_lenia_active() {
+            let (w, h, pixels, metrics, parameters) = if self.gpu_lenia_active() {
                 let gpu = self
                     .gpu_lenia
                     .as_ref()
                     .ok_or_else(|| anyhow::anyhow!("GPU Lenia is unavailable"))?;
-                let (size, field, previous) = gpu.read_fields_blocking()?;
-                let mut pixels = vec![0; size * size * 4];
-                gpu::colorize_fields(&field, &previous, size, self.render_style, &mut pixels);
-                let metrics = Metrics::from_scalar_grid(&field, Some(&previous), size, size);
-                (size, size, pixels, metrics)
+                let export_state = self.gpu_lenia_export_state(gpu)?;
+                (
+                    export_state.size,
+                    export_state.size,
+                    export_state.pixels,
+                    export_state.metrics,
+                    export_state.parameters,
+                )
             } else {
                 let (w, h) = self.render_active();
-                (w, h, self.pixels.clone(), self.active_metrics())
+                (
+                    w,
+                    h,
+                    self.pixels.clone(),
+                    self.active_metrics(),
+                    self.parameter_json(),
+                )
             };
 
             export::create_evidence_pack(
@@ -888,7 +966,7 @@ impl PeterMathApp {
                     step_count: self.step_count,
                     grid_width: w,
                     grid_height: h,
-                    parameters: self.parameter_json(),
+                    parameters,
                     metrics,
                 },
             )
@@ -1216,12 +1294,16 @@ impl PeterMathApp {
         self.status = "Exported current Game of Life active bounding box as RLE.".to_owned();
     }
 
-    fn capture_comparison_baseline(&mut self) {
-        self.comparison_baseline = Some(self.lenia.snapshot());
-        self.comparison_value = self.comparison_parameter.current_value(&self.lenia);
+    fn clear_comparison_result(&mut self) {
         self.comparison_result = None;
         self.comparison_baseline_texture = None;
         self.comparison_variant_texture = None;
+    }
+
+    fn capture_comparison_baseline(&mut self) {
+        self.comparison_baseline = Some(self.lenia.snapshot());
+        self.comparison_value = self.comparison_parameter.current_value(&self.lenia);
+        self.clear_comparison_result();
         self.status = "Captured Lenia baseline for rule variant comparison.".to_owned();
     }
 
@@ -1494,7 +1576,10 @@ impl PeterMathApp {
     }
 
     fn active_region_json(&self) -> serde_json::Value {
-        let region = self.active_region();
+        Self::active_region_value(self.active_region())
+    }
+
+    fn active_region_value(region: ActiveRegionAnalysis) -> serde_json::Value {
         json!({
             "active_count": region.active_count,
             "bounds": region.bounds.map(|(min_x, min_y, max_x, max_y)| {
@@ -1507,7 +1592,10 @@ impl PeterMathApp {
     }
 
     fn population_phase_json(&self) -> serde_json::Value {
-        let phase = self.population_phase_analysis();
+        Self::population_phase_value(self.population_phase_analysis())
+    }
+
+    fn population_phase_value(phase: PopulationPhaseAnalysis) -> serde_json::Value {
         json!({
             "label": phase.label,
             "mass_trend": phase.mass_trend,
@@ -1515,6 +1603,40 @@ impl PeterMathApp {
             "stability_trend": phase.stability_trend,
             "vitality_trend": phase.vitality_trend,
             "centroid_drift": {"x": phase.centroid_drift.0, "y": phase.centroid_drift.1},
+        })
+    }
+
+    fn lenia_parameter_json(
+        &self,
+        active_region: ActiveRegionAnalysis,
+        phase_analysis: PopulationPhaseAnalysis,
+    ) -> serde_json::Value {
+        json!({
+            "schema_version": export::SCHEMA_VERSION,
+            "kernel_radius": self.lenia.radius,
+            "growth_center": self.lenia.growth_center,
+            "growth_width": self.lenia.growth_width,
+            "time_step": self.lenia.dt,
+            "damping": self.lenia.decay,
+            "backend": self.backend_label(),
+            "active_tool": self.tool.id(),
+            "active_preset": self.active_preset.id(),
+            "active_stamp": self.active_stamp.id(),
+            "brush_radius": self.brush_radius,
+            "brush_strength": self.brush_strength,
+            "random_density": self.random_density,
+            "grid_profile": self.grid_profile.label(),
+            "phase_label": phase_analysis.label,
+            "inspected_point": self.lenia_inspection_json(),
+            "metric_history": self.metric_history_summary_json(),
+            "performance": self.performance_json(),
+            "active_region": Self::active_region_value(active_region),
+            "phase_analysis": Self::population_phase_value(phase_analysis),
+            "rule_variant_comparison": self.comparison_json(),
+            "source_grid": {
+                "width": self.lenia.size().0,
+                "height": self.lenia.size().1,
+            },
         })
     }
 
@@ -1562,33 +1684,9 @@ impl PeterMathApp {
 
     fn parameter_json(&self) -> serde_json::Value {
         match self.mode {
-            SimMode::Lenia => json!({
-                "schema_version": export::SCHEMA_VERSION,
-                "kernel_radius": self.lenia.radius,
-                "growth_center": self.lenia.growth_center,
-                "growth_width": self.lenia.growth_width,
-                "time_step": self.lenia.dt,
-                "damping": self.lenia.decay,
-                "backend": self.backend_label(),
-                "active_tool": self.tool.id(),
-                "active_preset": self.active_preset.id(),
-                "active_stamp": self.active_stamp.id(),
-                "brush_radius": self.brush_radius,
-                "brush_strength": self.brush_strength,
-                "random_density": self.random_density,
-                "grid_profile": self.grid_profile.label(),
-                "phase_label": self.lenia_phase().label(),
-                "inspected_point": self.lenia_inspection_json(),
-                "metric_history": self.metric_history_summary_json(),
-                "performance": self.performance_json(),
-                "active_region": self.active_region_json(),
-                "phase_analysis": self.population_phase_json(),
-                "rule_variant_comparison": self.comparison_json(),
-                "source_grid": {
-                    "width": self.lenia.size().0,
-                    "height": self.lenia.size().1,
-                },
-            }),
+            SimMode::Lenia => {
+                self.lenia_parameter_json(self.active_region(), self.population_phase_analysis())
+            }
             SimMode::ReactionDiffusion => json!({
                 "schema_version": export::SCHEMA_VERSION,
                 "feed": self.reaction.feed,
@@ -1888,6 +1986,7 @@ impl PeterMathApp {
                     self.life.reset_random();
                     self.step_count = 0;
                     self.mark_cpu_texture_dirty();
+                    self.reset_metric_history();
                 }
                 ui.label("Rule B3/S23: birth with 3 neighbors; survival with 2 or 3 neighbors.");
                 ui.separator();
@@ -2055,16 +2154,24 @@ impl PeterMathApp {
                 if selected != self.comparison_parameter {
                     self.comparison_parameter = selected;
                     self.comparison_value = selected.current_value(&self.lenia);
+                    self.clear_comparison_result();
                 }
             });
-        ui.add(
-            egui::Slider::new(
-                &mut self.comparison_value,
-                self.comparison_parameter.range(),
+        let value_changed = ui
+            .add(
+                egui::Slider::new(
+                    &mut self.comparison_value,
+                    self.comparison_parameter.range(),
+                )
+                .text(self.comparison_parameter.label()),
             )
-            .text(self.comparison_parameter.label()),
-        );
-        ui.add(egui::Slider::new(&mut self.comparison_steps, 8..=240).text("comparison steps"));
+            .changed();
+        let steps_changed = ui
+            .add(egui::Slider::new(&mut self.comparison_steps, 8..=240).text("comparison steps"))
+            .changed();
+        if value_changed || steps_changed {
+            self.clear_comparison_result();
+        }
         if ui.button("Apply variant to current").clicked() {
             self.apply_variant_to_current_lenia();
         }
