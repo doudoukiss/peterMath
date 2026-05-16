@@ -2,6 +2,7 @@
 
 mod app;
 mod export;
+mod gpu;
 mod metrics;
 mod palette;
 mod simulation;

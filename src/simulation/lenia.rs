@@ -42,6 +42,14 @@ impl LeniaSim {
         (self.w, self.h)
     }
 
+    pub fn field(&self) -> &[f32] {
+        &self.field
+    }
+
+    pub fn kernel_entries(&self) -> &[(isize, isize, f32)] {
+        &self.kernel
+    }
+
     pub fn set_radius(&mut self, radius: usize) {
         self.radius = radius.max(3);
         self.rebuild_kernel();

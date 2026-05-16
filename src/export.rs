@@ -1,5 +1,6 @@
 use crate::metrics::Metrics;
 use serde::Serialize;
+use serde_json::Value;
 use std::fs;
 use std::path::Path;
 
@@ -19,9 +20,25 @@ struct SnapshotMetadata<'a> {
     project: &'a str,
     mode: &'a str,
     render_style: &'a str,
+    backend: &'a str,
     seed: u64,
     step_count: u64,
+    grid_width: usize,
+    grid_height: usize,
+    parameters: Value,
     metrics: SerializableMetrics,
+}
+
+pub struct SnapshotExport<'a> {
+    pub mode: &'a str,
+    pub render_style: &'a str,
+    pub backend: &'a str,
+    pub seed: u64,
+    pub step_count: u64,
+    pub grid_width: usize,
+    pub grid_height: usize,
+    pub parameters: Value,
+    pub metrics: Metrics,
 }
 
 #[derive(Serialize)]
@@ -34,27 +51,24 @@ struct SerializableMetrics {
     active: usize,
 }
 
-pub fn save_json(
-    path: &str,
-    mode: &str,
-    render_style: &str,
-    seed: u64,
-    step_count: u64,
-    metrics: Metrics,
-) -> anyhow::Result<()> {
+pub fn save_json(path: &str, snapshot: SnapshotExport<'_>) -> anyhow::Result<()> {
     let metadata = SnapshotMetadata {
         project: "peterMath",
-        mode,
-        render_style,
-        seed,
-        step_count,
+        mode: snapshot.mode,
+        render_style: snapshot.render_style,
+        backend: snapshot.backend,
+        seed: snapshot.seed,
+        step_count: snapshot.step_count,
+        grid_width: snapshot.grid_width,
+        grid_height: snapshot.grid_height,
+        parameters: snapshot.parameters,
         metrics: SerializableMetrics {
-            mass: metrics.mass,
-            entropy: metrics.entropy,
-            symmetry: metrics.symmetry,
-            stability: metrics.stability,
-            vitality: metrics.vitality,
-            active: metrics.active,
+            mass: snapshot.metrics.mass,
+            entropy: snapshot.metrics.entropy,
+            symmetry: snapshot.metrics.symmetry,
+            stability: snapshot.metrics.stability,
+            vitality: snapshot.metrics.vitality,
+            active: snapshot.metrics.active,
         },
     };
     let json = serde_json::to_string_pretty(&metadata)?;
