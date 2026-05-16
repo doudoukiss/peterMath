@@ -234,7 +234,15 @@ impl LeniaSim {
             }
             "dense_bloom" => {
                 self.configure_rule(11, 0.28, 0.070, 0.040, 0.004);
-                self.randomize_density_inner(&mut rng, 0.52);
+                self.randomize_density_inner(&mut rng, 0.30);
+                for i in 0..36 {
+                    let a = i as f32 / 36.0 * std::f32::consts::TAU;
+                    let ring = if i % 2 == 0 { 0.17 } else { 0.29 };
+                    let wobble = 1.0 + 0.10 * (i as f32 * 1.7).sin();
+                    let cx = self.w as f32 * (0.50 + ring * wobble * a.cos());
+                    let cy = self.h as f32 * (0.50 + ring * a.sin());
+                    self.add_blob(cx, cy, 2.6 + (i % 4) as f32 * 0.65, 0.16 + 0.08 * rng.f32());
+                }
             }
             _ => {
                 self.configure_rule(9, 0.31, 0.052, 0.060, 0.003);

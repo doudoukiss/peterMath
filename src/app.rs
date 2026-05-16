@@ -30,6 +30,8 @@ pub struct PeterMathApp {
     running: bool,
     judge_mode: bool,
     show_mode: ShowModeState,
+    info_tab: MainInfoTab,
+    active_major_case: Option<MajorCaseId>,
     tool: InteractionTool,
     active_preset: LeniaPreset,
     active_stamp: LeniaStamp,
@@ -183,6 +185,7 @@ struct PerformanceStats {
 struct ShowModeState {
     enabled: bool,
     playing: bool,
+    finished: bool,
     scene_index: usize,
     scene_elapsed: f32,
     total_elapsed: f32,
@@ -191,26 +194,63 @@ struct ShowModeState {
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum ShowSceneId {
-    Opening,
-    LifeStructure,
+    QuickOpening,
+    QuickLife,
+    QuickReaction,
+    QuickLenia,
+    QuickComparison,
+    LifeStillLifes,
+    LifeOscillators,
+    LifeGlider,
+    ReactionSpots,
     ReactionLabyrinth,
+    ReactionWaves,
     ReactionMitosis,
     LeniaOrbital,
-    LeniaDenseBloom,
+    LeniaTwin,
+    LeniaKernel,
+    LeniaDense,
+    FinalSummary,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MainInfoTab {
+    ShowNarration,
+    MajorCases,
+    ParametersDiagnostics,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum MajorCaseId {
+    LifeStillLifes,
+    LifeOscillators,
+    LifeGlider,
+    ReactionSpots,
+    ReactionLabyrinth,
+    ReactionWaves,
+    ReactionMitosis,
+    LeniaOrbital,
+    LeniaTwin,
+    LeniaKernel,
+    LeniaDense,
+    LeniaFading,
 }
 
 #[derive(Clone, Copy)]
 enum ShowSetup {
-    LeniaPreset(LeniaPreset),
-    ReactionPreset(&'static str),
-    LifeStructureShowcase,
+    Lenia(LeniaPreset),
+    Reaction(&'static str),
+    Life(&'static str),
 }
 
 #[derive(Clone, Copy)]
 struct ShowNarration {
+    core_question_zh: &'static str,
     initial_zh: &'static str,
     parameters_zh: &'static str,
     formula_ascii: &'static str,
+    variables_zh: &'static str,
+    algorithm_zh: &'static str,
     why_zh: &'static str,
     conclusion_zh: &'static str,
 }
@@ -218,6 +258,7 @@ struct ShowNarration {
 #[derive(Clone, Copy)]
 struct ShowScene {
     id: ShowSceneId,
+    chapter: &'static str,
     title_zh: &'static str,
     duration_secs: f32,
     mode: SimMode,
@@ -225,6 +266,21 @@ struct ShowScene {
     step_rate: usize,
     setup: ShowSetup,
     narration: ShowNarration,
+    case_id: Option<MajorCaseId>,
+    hold_on_finish: bool,
+}
+
+#[derive(Clone, Copy)]
+struct MajorCase {
+    id: MajorCaseId,
+    title_zh: &'static str,
+    behavior_label_zh: &'static str,
+    mode: SimMode,
+    render_style: RenderStyle,
+    step_rate: usize,
+    setup: ShowSetup,
+    explanation_zh: &'static str,
+    expected_outcome_zh: &'static str,
 }
 
 impl ShowModeState {
@@ -232,6 +288,7 @@ impl ShowModeState {
         Self {
             enabled: true,
             playing: true,
+            finished: false,
             scene_index: 0,
             scene_elapsed: 0.0,
             total_elapsed: 0.0,
@@ -243,120 +300,574 @@ impl ShowModeState {
 impl ShowSceneId {
     fn id(self) -> &'static str {
         match self {
-            Self::Opening => "opening",
-            Self::LifeStructure => "life_structure_showcase",
+            Self::QuickOpening => "quick_opening",
+            Self::QuickLife => "quick_life",
+            Self::QuickReaction => "quick_reaction",
+            Self::QuickLenia => "quick_lenia",
+            Self::QuickComparison => "quick_comparison",
+            Self::LifeStillLifes => "life_still_lifes",
+            Self::LifeOscillators => "life_oscillators",
+            Self::LifeGlider => "life_glider",
+            Self::ReactionSpots => "reaction_spots",
             Self::ReactionLabyrinth => "reaction_labyrinth",
+            Self::ReactionWaves => "reaction_waves",
             Self::ReactionMitosis => "reaction_mitosis",
             Self::LeniaOrbital => "lenia_orbital_field",
-            Self::LeniaDenseBloom => "lenia_dense_bloom",
+            Self::LeniaTwin => "lenia_twin_organisms",
+            Self::LeniaKernel => "lenia_kernel_ring",
+            Self::LeniaDense => "lenia_dense_bloom",
+            Self::FinalSummary => "final_summary",
         }
     }
 }
 
-fn show_scenes() -> [ShowScene; 6] {
+impl MainInfoTab {
+    fn label(self) -> &'static str {
+        match self {
+            Self::ShowNarration => "演示讲解",
+            Self::MajorCases => "主要情况",
+            Self::ParametersDiagnostics => "参数/诊断",
+        }
+    }
+}
+
+impl MajorCaseId {
+    fn id(self) -> &'static str {
+        match self {
+            Self::LifeStillLifes => "life_still_lifes",
+            Self::LifeOscillators => "life_oscillators",
+            Self::LifeGlider => "life_glider",
+            Self::ReactionSpots => "reaction_spots",
+            Self::ReactionLabyrinth => "reaction_labyrinth",
+            Self::ReactionWaves => "reaction_waves",
+            Self::ReactionMitosis => "reaction_mitosis",
+            Self::LeniaOrbital => "lenia_orbital",
+            Self::LeniaTwin => "lenia_twin",
+            Self::LeniaKernel => "lenia_kernel_ring",
+            Self::LeniaDense => "lenia_dense_bloom",
+            Self::LeniaFading => "lenia_fading",
+        }
+    }
+}
+
+fn show_scenes() -> [ShowScene; 17] {
     [
         ShowScene {
-            id: ShowSceneId::Opening,
-            title_zh: "开场导览：局部规则生成整体结构",
-            duration_secs: 6.0,
+            id: ShowSceneId::QuickOpening,
+            chapter: "快速总览",
+            title_zh: "开场：局部规则生成整体结构",
+            duration_secs: 15.0,
             mode: SimMode::Lenia,
             render_style: RenderStyle::Artistic,
             step_rate: 1,
-            setup: ShowSetup::LeniaPreset(LeniaPreset::OrbitalField),
+            setup: ShowSetup::Lenia(LeniaPreset::OrbitalField),
             narration: ShowNarration {
+                core_question_zh: "这个项目到底在证明什么？",
                 initial_zh: "初始图形：一组柔和的连续场种子，作为三种系统的共同入口。",
                 parameters_zh: "参数条件：自动演示会依次切换系统、预设和速度，评委无需先调参。",
                 formula_ascii: "local rule + repeated update -> global structure",
+                variables_zh: "local rule 是每个点的局部规则；update 是重复迭代；global structure 是最后出现的整体形态。",
+                algorithm_zh: "算法步骤：初始化一个场；每一帧按同一规则更新；记录指标；用颜色解释同一份数据。",
                 why_zh: "每个点只根据附近邻居更新，但重复很多次后会出现整体形态。",
                 conclusion_zh: "观察目标：把项目理解为一组可运行的数学实验，而不是预渲染动画。",
             },
+            case_id: None,
+            hold_on_finish: false,
         },
         ShowScene {
-            id: ShowSceneId::LifeStructure,
-            title_zh: "生命游戏：结构图谱",
+            id: ShowSceneId::QuickLife,
+            chapter: "快速总览",
+            title_zh: "生命游戏：离散结构一眼看懂",
             duration_secs: 18.0,
             mode: SimMode::GameOfLife,
             render_style: RenderStyle::Artistic,
             step_rate: 1,
-            setup: ShowSetup::LifeStructureShowcase,
+            setup: ShowSetup::Life("structure_showcase"),
             narration: ShowNarration {
+                core_question_zh: "只有活/死两种格子，为什么会出现稳定、闪烁和移动？",
                 initial_zh: "初始图形：方块、蜂巢、面包、闪烁器、蟾蜍、信标和滑翔机分区摆放。",
                 parameters_zh: "参数条件：96x96 教学网格，B3/S23 固定规则，演化速度 1 步/批次。",
                 formula_ascii: "dead+n=3->alive; alive+n=2 or 3->alive; else->dead",
+                variables_zh: "n 是周围 8 个邻居里的活细胞数量；alive/dead 是当前格子的状态。",
+                algorithm_zh: "算法步骤：数邻居；同时决定所有格子的下一步；用尾迹显示移动方向。",
                 why_zh: "每个格子只看周围 8 个邻居，孤立、拥挤和刚好平衡会产生不同命运。",
                 conclusion_zh: "预期结果：同时看到静止结构、周期结构和会移动的滑翔机。",
             },
+            case_id: Some(MajorCaseId::LifeGlider),
+            hold_on_finish: false,
         },
         ShowScene {
-            id: ShowSceneId::ReactionLabyrinth,
-            title_zh: "反应扩散：迷宫生长",
+            id: ShowSceneId::QuickReaction,
+            chapter: "快速总览",
+            title_zh: "反应扩散：化学竞争生成纹理",
             duration_secs: 18.0,
             mode: SimMode::ReactionDiffusion,
             render_style: RenderStyle::Artistic,
             step_rate: 8,
-            setup: ShowSetup::ReactionPreset("labyrinth"),
+            setup: ShowSetup::Reaction("labyrinth"),
             narration: ShowNarration {
+                core_question_zh: "两种虚拟化学物质为什么会长出斑点和迷宫？",
                 initial_zh: "初始图形：许多 B 物质扰动点散布在 A 物质背景中。",
                 parameters_zh: "参数条件：feed=0.029，kill=0.057，较密集种子，演化速度 8 步/批次。",
                 formula_ascii: "b_next = b + dt*(Db*laplace(b) + a*b*b - (kill+feed)*b)",
+                variables_zh: "a/b 是两种物质浓度；laplace 表示向周围扩散；feed/kill 表示补给和消耗。",
+                algorithm_zh: "算法步骤：扩散 A 和 B；计算反应 a*b*b；补给 A；消耗 B；重复后形成边界。",
                 why_zh: "B 会扩散也会消耗 A；反应和扩散速度接近时，边界会互相追逐。",
                 conclusion_zh: "预期结果：斑点逐渐连成弯曲通道，形成迷宫式不稳定边界。",
             },
+            case_id: Some(MajorCaseId::ReactionLabyrinth),
+            hold_on_finish: false,
         },
         ShowScene {
-            id: ShowSceneId::ReactionMitosis,
-            title_zh: "反应扩散：细胞分裂",
-            duration_secs: 12.0,
-            mode: SimMode::ReactionDiffusion,
-            render_style: RenderStyle::Artistic,
-            step_rate: 8,
-            setup: ShowSetup::ReactionPreset("mitosis"),
-            narration: ShowNarration {
-                initial_zh: "初始图形：少量圆形扰动点，像培养皿里的化学斑块。",
-                parameters_zh: "参数条件：feed=0.0367，kill=0.0649，同一公式但反应/补给平衡不同。",
-                formula_ascii: "a_next = a + dt*(Da*laplace(a) - a*b*b + feed*(1-a))",
-                why_zh: "改变 feed/kill 会改变物质补给和死亡速度，图案不再走向迷宫。",
-                conclusion_zh: "预期结果：同一套代码和公式，仅参数变化就能产生另一类纹理。",
-            },
-        },
-        ShowScene {
-            id: ShowSceneId::LeniaOrbital,
-            title_zh: "Lenia：轨道生命场",
+            id: ShowSceneId::QuickLenia,
+            chapter: "快速总览",
+            title_zh: "Lenia：连续生命场",
             duration_secs: 22.0,
             mode: SimMode::Lenia,
             render_style: RenderStyle::Artistic,
             step_rate: 1,
-            setup: ShowSetup::LeniaPreset(LeniaPreset::OrbitalField),
+            setup: ShowSetup::Lenia(LeniaPreset::OrbitalField),
             narration: ShowNarration {
+                core_question_zh: "如果格子不再只有活/死，而是 0 到 1 的连续生命量，会发生什么？",
                 initial_zh: "初始图形：螺旋分布的连续质量种子，形成可运动的柔性场。",
-                parameters_zh:
-                    "参数条件：GPU 优先，radius=9，growth center=0.31，growth width=0.052。",
+                parameters_zh: "参数条件：GPU 优先，radius=9，growth center=0.31，growth width=0.052。",
                 formula_ascii: "u_next = clamp(u + dt*(G(K*u) - damping*u), 0, 1)",
+                variables_zh: "u 是当前生命场；K*u 是邻域平均；G 是增长函数；damping 是衰减。",
+                algorithm_zh: "算法步骤：卷积邻域；计算增长；扣除阻尼；限制到 0..1；用梯度和等值线渲染。",
                 why_zh: "每个点听取一圈邻域平均值，刚好接近增长中心时增强，否则衰减。",
                 conclusion_zh: "预期结果：边界、脊线和质心漂移共同呈现类似生命的连续运动。",
             },
+            case_id: Some(MajorCaseId::LeniaOrbital),
+            hold_on_finish: false,
         },
         ShowScene {
-            id: ShowSceneId::LeniaDenseBloom,
-            title_zh: "Lenia：密集开花与湍动",
-            duration_secs: 14.0,
+            id: ShowSceneId::QuickComparison,
+            chapter: "快速总览",
+            title_zh: "三系统对比：同一个思想的三种形式",
+            duration_secs: 17.0,
             mode: SimMode::Lenia,
             render_style: RenderStyle::Artistic,
             step_rate: 1,
-            setup: ShowSetup::LeniaPreset(LeniaPreset::DenseBloom),
+            setup: ShowSetup::Lenia(LeniaPreset::TwinOrganisms),
             narration: ShowNarration {
+                core_question_zh: "为什么这不是三段普通动画，而是三种数学生命实验？",
+                initial_zh: "初始图形：从离散细胞、化学浓度到连续生命场，数据类型逐层变丰富。",
+                parameters_zh: "参数条件：每个系统都有确定性种子和可调规则，导出 JSON 可复现实验。",
+                formula_ascii: "state[t+1] = rule(state[t], neighbors, parameters)",
+                variables_zh: "state 是当前状态；neighbors 是局部邻域；parameters 是规则旋钮。",
+                algorithm_zh: "算法步骤：选择系统；载入代表性初始状态；运行规则；比较指标和图像。",
+                why_zh: "三者都说明复杂性不一定来自复杂代码，而可能来自简单规则被反复执行。",
+                conclusion_zh: "预期结果：评委先记住共同核心，再进入每个系统的深度章节。",
+            },
+            case_id: Some(MajorCaseId::LeniaTwin),
+            hold_on_finish: false,
+        },
+        ShowScene {
+            id: ShowSceneId::LifeStillLifes,
+            chapter: "生命游戏深度",
+            title_zh: "生命游戏：稳定结构",
+            duration_secs: 35.0,
+            mode: SimMode::GameOfLife,
+            render_style: RenderStyle::Artistic,
+            step_rate: 1,
+            setup: ShowSetup::Life("still_lifes"),
+            narration: ShowNarration {
+                core_question_zh: "什么样的局部结构会保持不变？",
+                initial_zh: "初始图形：多个方块、蜂巢和面包分散排列，彼此距离足够远。",
+                parameters_zh: "参数条件：B3/S23；低速演化；教学渲染显示活细胞边界。",
+                formula_ascii: "alive+n=2 or 3->alive; dead+n=3->alive",
+                variables_zh: "n 是邻居数量；稳定结构的每个活细胞都刚好有 2 或 3 个邻居。",
+                algorithm_zh: "算法步骤：每步重新数邻居；静物因为下一步仍等于当前状态而停住。",
+                why_zh: "方块、蜂巢、面包里的每个细胞都处在局部平衡，不会出生也不会死亡。",
+                conclusion_zh: "观察结论：简单规则可以产生稳定的局部对象，像数学里的定点。",
+            },
+            case_id: Some(MajorCaseId::LifeStillLifes),
+            hold_on_finish: false,
+        },
+        ShowScene {
+            id: ShowSceneId::LifeOscillators,
+            chapter: "生命游戏深度",
+            title_zh: "生命游戏：周期振荡",
+            duration_secs: 35.0,
+            mode: SimMode::GameOfLife,
+            render_style: RenderStyle::Artistic,
+            step_rate: 1,
+            setup: ShowSetup::Life("oscillators"),
+            narration: ShowNarration {
+                core_question_zh: "为什么有些结构不是静止，而是来回切换？",
+                initial_zh: "初始图形：闪烁器、蟾蜍和信标重复摆放，方便看到不同周期。",
+                parameters_zh: "参数条件：同一 B3/S23 规则；每 250ms 左右推进一次，保留尾迹。",
+                formula_ascii: "state[t+period] = state[t]",
+                variables_zh: "period 是周期；state[t] 是第 t 步的整张网格。",
+                algorithm_zh: "算法步骤：记录状态哈希；如果若干步后哈希重复，就检测到周期。",
+                why_zh: "局部出生和死亡互相接力，结构在有限状态之间循环。",
+                conclusion_zh: "观察结论：离散系统不只会稳定，也会形成清晰的周期时间结构。",
+            },
+            case_id: Some(MajorCaseId::LifeOscillators),
+            hold_on_finish: false,
+        },
+        ShowScene {
+            id: ShowSceneId::LifeGlider,
+            chapter: "生命游戏深度",
+            title_zh: "生命游戏：滑翔机漂移",
+            duration_secs: 35.0,
+            mode: SimMode::GameOfLife,
+            render_style: RenderStyle::Artistic,
+            step_rate: 1,
+            setup: ShowSetup::Life("glider_lane"),
+            narration: ShowNarration {
+                core_question_zh: "没有任何速度变量，图案为什么会移动？",
+                initial_zh: "初始图形：多组滑翔机沿对角线排列，尾迹显示运动路径。",
+                parameters_zh: "参数条件：B3/S23；教学网格；自动检测质心漂移。",
+                formula_ascii: "glider[t+4] = shift(glider[t], +1, +1)",
+                variables_zh: "shift 表示整个图案平移；+1,+1 表示向右下移动一个格子。",
+                algorithm_zh: "算法步骤：运行 4 步；检测滑翔机组件；比较质心位置变化。",
+                why_zh: "滑翔机的出生/死亡模式每 4 步复制自己，但整体位置移动一个格子。",
+                conclusion_zh: "观察结论：移动可以从局部规则中涌现出来，不需要写运动方程。",
+            },
+            case_id: Some(MajorCaseId::LifeGlider),
+            hold_on_finish: false,
+        },
+        ShowScene {
+            id: ShowSceneId::ReactionSpots,
+            chapter: "反应扩散深度",
+            title_zh: "反应扩散：斑点膜",
+            duration_secs: 45.0,
+            mode: SimMode::ReactionDiffusion,
+            render_style: RenderStyle::Artistic,
+            step_rate: 8,
+            setup: ShowSetup::Reaction("spots"),
+            narration: ShowNarration {
+                core_question_zh: "为什么局部扰动会长成斑点，而不是均匀扩散掉？",
+                initial_zh: "初始图形：许多小圆形 B 物质种子嵌入 A 物质背景。",
+                parameters_zh: "参数条件：feed=0.042，kill=0.060，B 物质较容易形成孤立斑点。",
+                formula_ascii: "A + 2B -> 3B; B decays by (kill+feed)*B",
+                variables_zh: "A 是背景物质；B 是激活物质；feed/kill 决定补给和消耗的平衡。",
+                algorithm_zh: "算法步骤：先局部反应放大 B；再扩散抹平边界；重复后斑点稳定。",
+                why_zh: "反应让斑点中心变强，扩散让边缘变宽，消耗阻止它无限长大。",
+                conclusion_zh: "观察结论：斑点是增长、扩散、消耗三者平衡后的形态。",
+            },
+            case_id: Some(MajorCaseId::ReactionSpots),
+            hold_on_finish: false,
+        },
+        ShowScene {
+            id: ShowSceneId::ReactionLabyrinth,
+            chapter: "反应扩散深度",
+            title_zh: "反应扩散：迷宫边界",
+            duration_secs: 45.0,
+            mode: SimMode::ReactionDiffusion,
+            render_style: RenderStyle::Artistic,
+            step_rate: 8,
+            setup: ShowSetup::Reaction("labyrinth"),
+            narration: ShowNarration {
+                core_question_zh: "为什么同一公式会从斑点变成迷宫？",
+                initial_zh: "初始图形：密集扰动让多个生长前沿互相碰撞。",
+                parameters_zh: "参数条件：feed=0.029，kill=0.057，前沿更容易连接成曲线。",
+                formula_ascii: "b_next = b + dt*(Db*laplace(b) + a*b*b - (kill+feed)*b)",
+                variables_zh: "Db 控制 B 扩散；a*b*b 控制自催化增长；kill+feed 控制衰减。",
+                algorithm_zh: "算法步骤：扩散推动前沿；反应强化边界；相邻前沿相遇后形成通道。",
+                why_zh: "参数把系统推向边界竞争区，孤立斑点会连成连续的迷宫墙。",
+                conclusion_zh: "观察结论：微小参数变化能导致完全不同的宏观图案。",
+            },
+            case_id: Some(MajorCaseId::ReactionLabyrinth),
+            hold_on_finish: false,
+        },
+        ShowScene {
+            id: ShowSceneId::ReactionWaves,
+            chapter: "反应扩散深度",
+            title_zh: "反应扩散：波纹传播",
+            duration_secs: 45.0,
+            mode: SimMode::ReactionDiffusion,
+            render_style: RenderStyle::Artistic,
+            step_rate: 8,
+            setup: ShowSetup::Reaction("waves"),
+            narration: ShowNarration {
+                core_question_zh: "反应扩散如何表现出像水波一样的传播？",
+                initial_zh: "初始图形：几条环形和斜向 B 物质带，制造可见波前。",
+                parameters_zh: "参数条件：feed=0.026，kill=0.051，扩散前沿更平滑。",
+                formula_ascii: "laplace(B) spreads; reaction sharpens the wave front",
+                variables_zh: "laplace(B) 是扩散项；reaction 是自催化项；wave front 是浓度快速变化的边界。",
+                algorithm_zh: "算法步骤：把条带作为扰动；每步扩散到邻域；反应项保留亮边。",
+                why_zh: "扩散把信号向外推，反应又让局部前沿变清晰，于是出现波纹。",
+                conclusion_zh: "观察结论：同一数值网格可以生成斑点、迷宫，也可以生成传播波。",
+            },
+            case_id: Some(MajorCaseId::ReactionWaves),
+            hold_on_finish: false,
+        },
+        ShowScene {
+            id: ShowSceneId::ReactionMitosis,
+            chapter: "反应扩散深度",
+            title_zh: "反应扩散：细胞分裂",
+            duration_secs: 45.0,
+            mode: SimMode::ReactionDiffusion,
+            render_style: RenderStyle::Artistic,
+            step_rate: 8,
+            setup: ShowSetup::Reaction("mitosis"),
+            narration: ShowNarration {
+                core_question_zh: "为什么一个斑块会像细胞一样伸长、分裂或破碎？",
+                initial_zh: "初始图形：少量圆形扰动点，像培养皿里的化学斑块。",
+                parameters_zh: "参数条件：feed=0.0367，kill=0.0649，补给和消耗更适合边界断裂。",
+                formula_ascii: "a_next = a + dt*(Da*laplace(a) - a*b*b + feed*(1-a))",
+                variables_zh: "Da 是 A 的扩散率；a*b*b 会消耗 A 并制造更多 B。",
+                algorithm_zh: "算法步骤：圆形斑块增长；边界被扩散拉长；局部消耗导致分裂。",
+                why_zh: "当中心和边缘的补给不平衡，斑块会从圆形变成分裂形态。",
+                conclusion_zh: "观察结论：参数不是装饰旋钮，而是控制形态命运的数学条件。",
+            },
+            case_id: Some(MajorCaseId::ReactionMitosis),
+            hold_on_finish: false,
+        },
+        ShowScene {
+            id: ShowSceneId::LeniaOrbital,
+            chapter: "Lenia 深度",
+            title_zh: "Lenia：轨道生命场",
+            duration_secs: 45.0,
+            mode: SimMode::Lenia,
+            render_style: RenderStyle::Artistic,
+            step_rate: 1,
+            setup: ShowSetup::Lenia(LeniaPreset::OrbitalField),
+            narration: ShowNarration {
+                core_question_zh: "连续场如何产生看起来像柔性生命的运动？",
+                initial_zh: "初始图形：螺旋分布的连续质量种子。",
+                parameters_zh: "参数条件：radius=9，growth center=0.31，growth width=0.052，damping 较低。",
+                formula_ascii: "u_next = clamp(u + dt*(G(K*u) - damping*u), 0, 1)",
+                variables_zh: "u 是生命量；K 是卷积核；G 是钟形增长函数；damping 防止质量无限积累。",
+                algorithm_zh: "算法步骤：计算邻域平均 K*u；映射为增长 G；更新 u；提取梯度和轮廓绘图。",
+                why_zh: "当局部邻域接近增长中心，边缘会被推着移动；过高或过低都会衰减。",
+                conclusion_zh: "观察结论：形体的美来自卷积、增长函数和阻尼之间的平衡。",
+            },
+            case_id: Some(MajorCaseId::LeniaOrbital),
+            hold_on_finish: false,
+        },
+        ShowScene {
+            id: ShowSceneId::LeniaTwin,
+            chapter: "Lenia 深度",
+            title_zh: "Lenia：双生命体相互影响",
+            duration_secs: 45.0,
+            mode: SimMode::Lenia,
+            render_style: RenderStyle::Artistic,
+            step_rate: 1,
+            setup: ShowSetup::Lenia(LeniaPreset::TwinOrganisms),
+            narration: ShowNarration {
+                core_question_zh: "两个连续生命结构靠近时，会互相吸引、避让还是瓦解？",
+                initial_zh: "初始图形：两个相近的连续场种子，质量分布并不完全相同。",
+                parameters_zh: "参数条件：双生命体预设，使用相同卷积核和增长中心。",
+                formula_ascii: "neighbor influence = K*u",
+                variables_zh: "K*u 同时包含自己和邻居的质量，因此两个结构会通过场相互影响。",
+                algorithm_zh: "算法步骤：同时卷积整张场；两个结构的邻域重叠后改变增长响应。",
+                why_zh: "连续场没有硬边界，两个生命体的影响会在邻域核里混合。",
+                conclusion_zh: "观察结论：Lenia 的交互不是碰撞脚本，而是同一场方程的自然结果。",
+            },
+            case_id: Some(MajorCaseId::LeniaTwin),
+            hold_on_finish: false,
+        },
+        ShowScene {
+            id: ShowSceneId::LeniaKernel,
+            chapter: "Lenia 深度",
+            title_zh: "Lenia：卷积核环",
+            duration_secs: 45.0,
+            mode: SimMode::Lenia,
+            render_style: RenderStyle::Artistic,
+            step_rate: 1,
+            setup: ShowSetup::Lenia(LeniaPreset::KernelRing),
+            narration: ShowNarration {
+                core_question_zh: "为什么卷积核半径会决定形体尺度？",
+                initial_zh: "初始图形：环状生命场，边界接近卷积核的有效尺度。",
+                parameters_zh: "参数条件：kernel ring 预设，观察半径圈和场边界的关系。",
+                formula_ascii: "K*u = weighted average inside a radius",
+                variables_zh: "K 是权重；radius 决定每个点能听到多远的邻居。",
+                algorithm_zh: "算法步骤：给邻域不同距离分配权重；用结果判断增长或衰减。",
+                why_zh: "如果半径太小，形体破碎；半径太大，局部细节被平均掉。",
+                conclusion_zh: "观察结论：数学核不仅影响速度，也直接塑造作品的视觉尺度。",
+            },
+            case_id: Some(MajorCaseId::LeniaKernel),
+            hold_on_finish: false,
+        },
+        ShowScene {
+            id: ShowSceneId::LeniaDense,
+            chapter: "Lenia 深度",
+            title_zh: "Lenia：密集开花与湍动",
+            duration_secs: 45.0,
+            mode: SimMode::Lenia,
+            render_style: RenderStyle::Artistic,
+            step_rate: 1,
+            setup: ShowSetup::Lenia(LeniaPreset::DenseBloom),
+            narration: ShowNarration {
+                core_question_zh: "当生命场太满时，美会变成湍动还是衰退？",
                 initial_zh: "初始图形：高密度连续场，让许多区域同时接近增长条件。",
                 parameters_zh: "参数条件：dense bloom 预设，较宽增长窗口和较高初始质量。",
                 formula_ascii: "growth = G(K*u); too much mass -> saturation or decay",
+                variables_zh: "growth 是增长响应；mass 是场中总生命量；saturation 是过密后的饱和。",
+                algorithm_zh: "算法步骤：快速增长；局部竞争；指标显示质量、熵、稳定度变化。",
                 why_zh: "当太多点同时增长，局部竞争会增强，系统可能饱和、湍动或衰退。",
-                conclusion_zh: "预期结果：看到从快速增长到不稳定边界，再到稳定或衰退的过程。",
+                conclusion_zh: "观察结论：美不只是漂亮画面，也包括系统接近失衡时的数学张力。",
             },
+            case_id: Some(MajorCaseId::LeniaDense),
+            hold_on_finish: false,
+        },
+        ShowScene {
+            id: ShowSceneId::FinalSummary,
+            chapter: "证据与总结",
+            title_zh: "总结：本项目证明了什么",
+            duration_secs: 45.0,
+            mode: SimMode::Lenia,
+            render_style: RenderStyle::Artistic,
+            step_rate: 1,
+            setup: ShowSetup::Lenia(LeniaPreset::CoralDrift),
+            narration: ShowNarration {
+                core_question_zh: "评委应从这个作品带走什么结论？",
+                initial_zh: "初始图形：三类系统已经依次展示，最后停在可导出证据的状态。",
+                parameters_zh: "参数条件：所有实验都有确定性种子、公式、指标和导出 JSON。",
+                formula_ascii: "visible artwork = reproducible simulation + interpretation layer",
+                variables_zh: "reproducible 表示可复现；simulation 是数值实验；interpretation 是解释层。",
+                algorithm_zh: "算法步骤：载入案例；运行规则；解释变量；比较指标；导出证据包。",
+                why_zh: "代码不是只画图，而是在同一界面中连接规则、形态、指标和解释。",
+                conclusion_zh: "总结结论：数学规则可以产生可观察、可解释、可复现的计算艺术。",
+            },
+            case_id: Some(MajorCaseId::LeniaFading),
+            hold_on_finish: true,
         },
     ]
 }
 
 fn show_total_duration_secs() -> f32 {
     show_scenes().iter().map(|scene| scene.duration_secs).sum()
+}
+
+fn major_cases() -> [MajorCase; 12] {
+    [
+        MajorCase {
+            id: MajorCaseId::LifeStillLifes,
+            title_zh: "生命游戏：静物",
+            behavior_label_zh: "稳定",
+            mode: SimMode::GameOfLife,
+            render_style: RenderStyle::Artistic,
+            step_rate: 1,
+            setup: ShowSetup::Life("still_lifes"),
+            explanation_zh: "每个活细胞都有 2 或 3 个邻居，下一步仍保持原状。",
+            expected_outcome_zh: "方块、蜂巢和面包会停住，说明规则存在稳定定点。",
+        },
+        MajorCase {
+            id: MajorCaseId::LifeOscillators,
+            title_zh: "生命游戏：振荡器",
+            behavior_label_zh: "周期",
+            mode: SimMode::GameOfLife,
+            render_style: RenderStyle::Artistic,
+            step_rate: 1,
+            setup: ShowSetup::Life("oscillators"),
+            explanation_zh: "出生和死亡在几个状态间循环，形成可检测的周期。",
+            expected_outcome_zh: "闪烁器、蟾蜍和信标会反复切换，尾迹显示周期变化。",
+        },
+        MajorCase {
+            id: MajorCaseId::LifeGlider,
+            title_zh: "生命游戏：滑翔机通道",
+            behavior_label_zh: "漂移",
+            mode: SimMode::GameOfLife,
+            render_style: RenderStyle::Artistic,
+            step_rate: 1,
+            setup: ShowSetup::Life("glider_lane"),
+            explanation_zh: "同一图形每 4 步复制一次，但整体平移一个格子。",
+            expected_outcome_zh: "滑翔机会沿对角线移动，质心漂移指标同步变化。",
+        },
+        MajorCase {
+            id: MajorCaseId::ReactionSpots,
+            title_zh: "反应扩散：斑点膜",
+            behavior_label_zh: "稳定/分岔",
+            mode: SimMode::ReactionDiffusion,
+            render_style: RenderStyle::Artistic,
+            step_rate: 8,
+            setup: ShowSetup::Reaction("spots"),
+            explanation_zh: "反应放大局部 B，扩散拉宽边界，消耗限制斑点大小。",
+            expected_outcome_zh: "许多亮斑逐渐形成，边界清晰但不会无限扩张。",
+        },
+        MajorCase {
+            id: MajorCaseId::ReactionLabyrinth,
+            title_zh: "反应扩散：迷宫",
+            behavior_label_zh: "不稳定边界",
+            mode: SimMode::ReactionDiffusion,
+            render_style: RenderStyle::Artistic,
+            step_rate: 8,
+            setup: ShowSetup::Reaction("labyrinth"),
+            explanation_zh: "低 feed 与中等 kill 让前沿相互连接，斑点转成通道。",
+            expected_outcome_zh: "几秒内出现弯曲迷宫边界，变化量和活跃面积上升。",
+        },
+        MajorCase {
+            id: MajorCaseId::ReactionWaves,
+            title_zh: "反应扩散：波纹",
+            behavior_label_zh: "传播",
+            mode: SimMode::ReactionDiffusion,
+            render_style: RenderStyle::Artistic,
+            step_rate: 8,
+            setup: ShowSetup::Reaction("waves"),
+            explanation_zh: "扩散把浓度向外推，反应项保持前沿明亮。",
+            expected_outcome_zh: "条带和圆环会展开成波纹，显示局部浓度传播。",
+        },
+        MajorCase {
+            id: MajorCaseId::ReactionMitosis,
+            title_zh: "反应扩散：分裂",
+            behavior_label_zh: "分裂",
+            mode: SimMode::ReactionDiffusion,
+            render_style: RenderStyle::Artistic,
+            step_rate: 8,
+            setup: ShowSetup::Reaction("mitosis"),
+            explanation_zh: "补给和消耗的平衡让圆形斑块伸长并局部分裂。",
+            expected_outcome_zh: "少量斑块会膨胀、拉伸或断裂，形成另一类纹理。",
+        },
+        MajorCase {
+            id: MajorCaseId::LeniaOrbital,
+            title_zh: "Lenia：轨道场",
+            behavior_label_zh: "漂移",
+            mode: SimMode::Lenia,
+            render_style: RenderStyle::Artistic,
+            step_rate: 1,
+            setup: ShowSetup::Lenia(LeniaPreset::OrbitalField),
+            explanation_zh: "卷积核把局部平均转成增长响应，边界不断被推移。",
+            expected_outcome_zh: "柔性轮廓、脊线和质心漂移形成连续生命感。",
+        },
+        MajorCase {
+            id: MajorCaseId::LeniaTwin,
+            title_zh: "Lenia：双生命体",
+            behavior_label_zh: "相互作用",
+            mode: SimMode::Lenia,
+            render_style: RenderStyle::Artistic,
+            step_rate: 1,
+            setup: ShowSetup::Lenia(LeniaPreset::TwinOrganisms),
+            explanation_zh: "两个结构共享同一连续场，邻域影响会互相叠加。",
+            expected_outcome_zh: "两个柔性形体会靠近、变形或避让，显示场的耦合。",
+        },
+        MajorCase {
+            id: MajorCaseId::LeniaKernel,
+            title_zh: "Lenia：核环",
+            behavior_label_zh: "尺度",
+            mode: SimMode::Lenia,
+            render_style: RenderStyle::Artistic,
+            step_rate: 1,
+            setup: ShowSetup::Lenia(LeniaPreset::KernelRing),
+            explanation_zh: "卷积核半径决定每个点能听到多远的邻居。",
+            expected_outcome_zh: "环状结构展示半径、邻域平均和视觉尺度之间的关系。",
+        },
+        MajorCase {
+            id: MajorCaseId::LeniaDense,
+            title_zh: "Lenia：密集开花",
+            behavior_label_zh: "湍动",
+            mode: SimMode::Lenia,
+            render_style: RenderStyle::Artistic,
+            step_rate: 1,
+            setup: ShowSetup::Lenia(LeniaPreset::DenseBloom),
+            explanation_zh: "大量区域同时接近增长条件，局部竞争增强。",
+            expected_outcome_zh: "从快速增长到饱和或湍动，指标显示稳定度下降。",
+        },
+        MajorCase {
+            id: MajorCaseId::LeniaFading,
+            title_zh: "Lenia：珊瑚衰退",
+            behavior_label_zh: "衰退",
+            mode: SimMode::Lenia,
+            render_style: RenderStyle::Artistic,
+            step_rate: 1,
+            setup: ShowSetup::Lenia(LeniaPreset::CoralDrift),
+            explanation_zh: "增长窗口和阻尼让部分结构无法长期维持质量。",
+            expected_outcome_zh: "局部纹理会漂移、变薄或衰退，展示生命场的边界条件。",
+        },
+    ]
 }
 
 fn show_elapsed_before_scene(scene_index: usize) -> f32 {
@@ -667,6 +1178,8 @@ impl PeterMathApp {
             running: true,
             judge_mode: true,
             show_mode: ShowModeState::enabled_default(),
+            info_tab: MainInfoTab::ShowNarration,
+            active_major_case: None,
             tool: InteractionTool::Draw,
             active_preset: LeniaPreset::OrbitalField,
             active_stamp: LeniaStamp::SoftCell,
@@ -906,8 +1419,8 @@ impl PeterMathApp {
                 self.lenia.reset_preset(self.active_preset.id());
                 self.sync_gpu_lenia_from_cpu();
             }
-            SimMode::ReactionDiffusion => self.reaction.reset_preset("mitosis"),
-            SimMode::GameOfLife => self.life.reset_preset("symmetric_seed"),
+            SimMode::ReactionDiffusion => self.reaction.reset_preset("labyrinth"),
+            SimMode::GameOfLife => self.life.reset_preset("structure_showcase"),
         }
         self.texture = None;
         self.mark_cpu_texture_dirty();
@@ -928,15 +1441,17 @@ impl PeterMathApp {
     fn start_show_mode(&mut self) {
         self.show_mode = ShowModeState::enabled_default();
         self.judge_mode = true;
+        self.info_tab = MainInfoTab::ShowNarration;
         self.show_active_region_overlay = true;
         self.apply_show_scene(0);
         self.running = true;
-        self.status = "演示模式已开始：系统会自动切换代表性实验。".to_owned();
+        self.status = "10 分钟评审演示已开始：先快速总览，再进入深度章节。".to_owned();
     }
 
     fn exit_show_mode(&mut self) {
         self.show_mode.enabled = false;
         self.show_mode.playing = false;
+        self.show_mode.finished = false;
         self.running = false;
         self.status = "已退出演示模式；当前画面保留为手动实验起点。".to_owned();
     }
@@ -947,6 +1462,7 @@ impl PeterMathApp {
             return;
         }
         self.show_mode.playing = !self.show_mode.playing;
+        self.show_mode.finished = false;
         self.running = self.show_mode.playing;
         self.status = if self.show_mode.playing {
             "演示继续播放。".to_owned()
@@ -958,6 +1474,7 @@ impl PeterMathApp {
     fn set_show_scene(&mut self, index: usize) {
         let scenes = show_scenes();
         self.show_mode.enabled = true;
+        self.show_mode.finished = false;
         self.show_mode.scene_index = index.min(scenes.len() - 1);
         self.show_mode.scene_elapsed = 0.0;
         self.update_show_total_elapsed();
@@ -975,6 +1492,7 @@ impl PeterMathApp {
 
     fn restart_show_mode(&mut self) {
         self.show_mode = ShowModeState::enabled_default();
+        self.info_tab = MainInfoTab::ShowNarration;
         self.apply_show_scene(0);
         self.running = true;
         self.status = "演示已从第一段重新开始。".to_owned();
@@ -984,6 +1502,7 @@ impl PeterMathApp {
         if self.show_mode.enabled && self.show_mode.playing {
             self.show_mode.playing = false;
             self.running = false;
+            self.show_mode.finished = false;
             self.status =
                 "演示已暂停：检测到手动参数或画布操作，可继续演示或退出手动实验。".to_owned();
         }
@@ -1009,13 +1528,14 @@ impl PeterMathApp {
         self.show_active_region_overlay = true;
         self.show_kernel_overlay = matches!(scene.mode, SimMode::Lenia);
         self.tool = InteractionTool::Pan;
+        self.active_major_case = scene.case_id;
         self.step_count = 0;
         self.tick_accumulator = Duration::ZERO;
         self.gpu_cpu_sync_counter = 0;
         self.clear_comparison_result();
 
         match scene.setup {
-            ShowSetup::LeniaPreset(preset) => {
+            ShowSetup::Lenia(preset) => {
                 self.active_preset = preset;
                 self.grid_profile = GridProfile::Reference192;
                 let size = self.grid_profile.size();
@@ -1028,14 +1548,14 @@ impl PeterMathApp {
                 self.inspected_lenia = Some(self.lenia.inspect_point(w / 2, h / 2));
                 self.sync_gpu_lenia_from_cpu();
             }
-            ShowSetup::ReactionPreset(preset) => {
+            ShowSetup::Reaction(preset) => {
                 self.reaction.reset_preset(preset);
             }
-            ShowSetup::LifeStructureShowcase => {
+            ShowSetup::Life(preset) => {
                 if self.life.size() != (96, 96) {
                     self.life.resize(96, 96);
                 }
-                self.life.reset_preset("structure_showcase");
+                self.life.reset_preset(preset);
             }
         }
 
@@ -1046,6 +1566,59 @@ impl PeterMathApp {
         self.show_mode.applied_scene_index = Some(index);
         self.update_show_total_elapsed();
         self.status = format!("演示场景：{}", scene.title_zh);
+    }
+
+    fn load_major_case(&mut self, case: MajorCase) {
+        self.show_mode.enabled = false;
+        self.show_mode.playing = false;
+        self.show_mode.finished = false;
+        self.mode = case.mode;
+        self.render_style = case.render_style;
+        self.steps_per_frame = case.step_rate;
+        self.judge_mode = true;
+        self.show_active_region_overlay = true;
+        self.show_kernel_overlay = matches!(case.mode, SimMode::Lenia);
+        self.tool = InteractionTool::Pan;
+        self.active_major_case = Some(case.id);
+        self.step_count = 0;
+        self.tick_accumulator = Duration::ZERO;
+        self.gpu_cpu_sync_counter = 0;
+        self.clear_comparison_result();
+
+        match case.setup {
+            ShowSetup::Lenia(preset) => {
+                self.active_preset = preset;
+                self.grid_profile = GridProfile::Reference192;
+                let size = self.grid_profile.size();
+                if self.lenia.size() != (size, size) {
+                    self.lenia.resize(size, size);
+                }
+                self.lenia.reset_preset(preset.id());
+                self.prefer_gpu_lenia = self.gpu_lenia.is_some();
+                let (w, h) = self.lenia.size();
+                self.inspected_lenia = Some(self.lenia.inspect_point(w / 2, h / 2));
+                self.sync_gpu_lenia_from_cpu();
+            }
+            ShowSetup::Reaction(preset) => {
+                self.reaction.reset_preset(preset);
+            }
+            ShowSetup::Life(preset) => {
+                if self.life.size() != (96, 96) {
+                    self.life.resize(96, 96);
+                }
+                self.life.reset_preset(preset);
+            }
+        }
+
+        self.texture = None;
+        self.mark_cpu_texture_dirty();
+        self.reset_metric_history();
+        self.running = true;
+        self.info_tab = MainInfoTab::ShowNarration;
+        self.status = format!(
+            "已载入主要情况：{}。这是实时模拟，可暂停、单步或改参数。",
+            case.title_zh
+        );
     }
 
     fn advance_show_mode(&mut self, frame_delta: Duration) {
@@ -1066,9 +1639,9 @@ impl PeterMathApp {
                 remaining -= remaining_in_scene;
                 if self.show_mode.scene_index + 1 >= scenes.len() {
                     self.show_mode.playing = false;
+                    self.show_mode.finished = true;
                     self.running = false;
-                    self.status =
-                        "演示已完成；可重新开始、跳回某一段，或退出到手动实验。".to_owned();
+                    self.status = "演示已完成；总结页会保留，直到评委点击结束演示。".to_owned();
                     break;
                 }
                 self.show_mode.scene_index += 1;
@@ -1352,6 +1925,14 @@ impl PeterMathApp {
 
     fn mark_cpu_texture_dirty(&mut self) {
         self.cpu_texture_dirty = true;
+    }
+
+    fn active_texture_options(&self) -> TextureOptions {
+        if self.mode == SimMode::GameOfLife {
+            TextureOptions::NEAREST
+        } else {
+            TextureOptions::LINEAR
+        }
     }
 
     fn update_performance_metadata(&mut self) {
@@ -1958,7 +2539,29 @@ impl PeterMathApp {
         show_mode_json_from_state(&self.show_mode)
     }
 
+    fn major_case_json(&self) -> serde_json::Value {
+        let Some(case_id) = self.active_major_case else {
+            return serde_json::Value::Null;
+        };
+        let Some(case) = major_cases().into_iter().find(|case| case.id == case_id) else {
+            return serde_json::Value::Null;
+        };
+        json!({
+            "id": case.id.id(),
+            "title_zh": case.title_zh,
+            "behavior_label_zh": case.behavior_label_zh,
+            "system": case.mode.label(),
+            "render_style": case.render_style.label(),
+            "step_rate": case.step_rate,
+            "explanation_zh": case.explanation_zh,
+            "expected_outcome_zh": case.expected_outcome_zh,
+        })
+    }
+
     fn attach_show_mode_json(&self, mut parameters: serde_json::Value) -> serde_json::Value {
+        if let Some(object) = parameters.as_object_mut() {
+            object.insert("major_case".to_owned(), self.major_case_json());
+        }
         if self.show_mode.enabled {
             if let Some(object) = parameters.as_object_mut() {
                 object.insert("show_mode".to_owned(), self.show_mode_json());
@@ -2086,6 +2689,16 @@ impl PeterMathApp {
                 "diffusion_a": self.reaction.diff_a,
                 "diffusion_b": self.reaction.diff_b,
                 "time_step": self.reaction.dt,
+                "formula_ascii": "b_next = b + dt*(Db*laplace(b) + a*b*b - (kill+feed)*b)",
+                "diagnostics": {
+                    "field_stats": {
+                        "min": self.reaction.field_stats().min,
+                        "max": self.reaction.field_stats().max,
+                        "mean": self.reaction.field_stats().mean,
+                        "delta_mean": self.reaction.field_stats().delta_mean,
+                        "activity": self.reaction.field_stats().activity,
+                    }
+                },
                 "performance": self.performance_json(),
                 "active_region": self.active_region_json(),
                 "phase_analysis": self.population_phase_json(),
@@ -2093,6 +2706,7 @@ impl PeterMathApp {
             SimMode::GameOfLife => json!({
                 "schema_version": export::SCHEMA_VERSION,
                 "rule": "B3/S23",
+                "formula_ascii": "dead+n=3->alive; alive+n=2 or 3->alive; else->dead",
                 "seed_density": self.life.random_density,
                 "rle_export": self.life.export_rle(),
                 "performance": self.performance_json(),
@@ -2110,7 +2724,7 @@ impl PeterMathApp {
             if ui.button("开始评审演示").clicked() {
                 self.start_show_mode();
             }
-            ui.small("自动播放约 90 秒，按顺序展示三种数学生命系统。");
+            ui.small("约 10 分钟：先 90 秒快速总览，再进入深度章节。");
             return;
         }
 
@@ -2118,12 +2732,19 @@ impl PeterMathApp {
         let total_duration = show_total_duration_secs();
         let scene_progress = (self.show_mode.scene_elapsed / scene.duration_secs).clamp(0.0, 1.0);
         let total_progress = (self.show_mode.total_elapsed / total_duration).clamp(0.0, 1.0);
+        if self.show_mode.finished {
+            ui.colored_label(
+                Color32::from_rgb(255, 219, 128),
+                "演示已完成，停留在总结页。",
+            );
+        }
         ui.label(format!(
-            "第 {}/{} 段：{}",
+            "{} · 第 {}/{} 段",
+            scene.chapter,
             self.show_mode.scene_index + 1,
-            show_scenes().len(),
-            scene.title_zh
+            show_scenes().len()
         ));
+        ui.strong(scene.title_zh);
         ui.add(egui::ProgressBar::new(scene_progress).text(format!(
             "{:.0}/{:.0}s",
             self.show_mode.scene_elapsed, scene.duration_secs
@@ -2136,12 +2757,18 @@ impl PeterMathApp {
             if ui
                 .button(if self.show_mode.playing {
                     "暂停演示"
+                } else if self.show_mode.finished {
+                    "重新播放"
                 } else {
                     "继续演示"
                 })
                 .clicked()
             {
-                self.toggle_show_playing();
+                if self.show_mode.finished {
+                    self.restart_show_mode();
+                } else {
+                    self.toggle_show_playing();
+                }
             }
             if ui.button("上一段").clicked() {
                 self.jump_show_scene(-1);
@@ -2154,25 +2781,60 @@ impl PeterMathApp {
             if ui.button("重新开始").clicked() {
                 self.restart_show_mode();
             }
-            if ui.button("退出到手动实验").clicked() {
+            if ui.button("结束演示进入手动实验").clicked() {
                 self.exit_show_mode();
             }
         });
+        egui::ComboBox::from_label("跳到章节")
+            .selected_text(scene.chapter)
+            .show_ui(ui, |ui| {
+                for (index, candidate) in show_scenes().iter().enumerate() {
+                    if ui
+                        .selectable_label(
+                            self.show_mode.scene_index == index,
+                            format!("{} · {}", candidate.chapter, candidate.title_zh),
+                        )
+                        .clicked()
+                    {
+                        self.set_show_scene(index);
+                        self.show_mode.playing = true;
+                        self.running = true;
+                    }
+                }
+            });
         ui.small("手动修改参数或画布时，演示会自动暂停。");
     }
 
     fn draw_show_mode_narration(&self, ui: &mut egui::Ui) {
         if !self.show_mode.enabled {
+            if let Some(case_id) = self.active_major_case {
+                if let Some(case) = major_cases().into_iter().find(|case| case.id == case_id) {
+                    ui.heading("当前主要情况");
+                    ui.strong(case.title_zh);
+                    ui.label(format!("行为标签：{}", case.behavior_label_zh));
+                    ui.label(case.explanation_zh);
+                    ui.label(case.expected_outcome_zh);
+                    ui.separator();
+                }
+            }
             return;
         }
         let scene = self.current_show_scene();
-        ui.heading("当前演示");
+        ui.heading("科学解释卡片");
+        ui.small(scene.chapter);
         ui.strong(scene.title_zh);
-        ui.label(scene.narration.initial_zh);
-        ui.label(scene.narration.parameters_zh);
-        ui.monospace(scene.narration.formula_ascii);
-        ui.label(scene.narration.why_zh);
-        ui.label(scene.narration.conclusion_zh);
+        ui.separator();
+        explanation_row(ui, "核心问题", scene.narration.core_question_zh);
+        explanation_row(ui, "初始条件", scene.narration.initial_zh);
+        explanation_row(ui, "参数条件", scene.narration.parameters_zh);
+        formula_card(
+            ui,
+            scene.narration.formula_ascii,
+            scene.narration.variables_zh,
+            scene.narration.algorithm_zh,
+        );
+        explanation_row(ui, "为什么会这样", scene.narration.why_zh);
+        explanation_row(ui, "观察结论", scene.narration.conclusion_zh);
         ui.separator();
     }
 
@@ -2422,7 +3084,29 @@ impl PeterMathApp {
     }
 
     fn draw_right_panel(&mut self, ui: &mut egui::Ui) {
-        self.draw_show_mode_narration(ui);
+        ui.horizontal_wrapped(|ui| {
+            for tab in [
+                MainInfoTab::ShowNarration,
+                MainInfoTab::MajorCases,
+                MainInfoTab::ParametersDiagnostics,
+            ] {
+                ui.selectable_value(&mut self.info_tab, tab, tab.label());
+            }
+        });
+        ui.separator();
+        match self.info_tab {
+            MainInfoTab::ShowNarration => {
+                self.draw_show_mode_narration(ui);
+                self.draw_compact_live_diagnostics(ui);
+                return;
+            }
+            MainInfoTab::MajorCases => {
+                self.draw_major_cases_panel(ui);
+                return;
+            }
+            MainInfoTab::ParametersDiagnostics => {}
+        }
+
         ui.heading("参数");
         match self.mode {
             SimMode::Lenia => {
@@ -2589,6 +3273,121 @@ impl PeterMathApp {
                 ui.label("2. 运行约 100 步，观察指标变化。");
                 ui.label("3. 一次只改变一个参数。");
                 ui.label("4. 比较新图案并导出证据。");
+            }
+        }
+    }
+
+    fn draw_compact_live_diagnostics(&self, ui: &mut egui::Ui) {
+        ui.separator();
+        ui.heading("实时证据");
+        let metrics = self.active_metrics();
+        ui.label(format!(
+            "质量 {:.3} · 熵 {:.3} · 稳定度 {:.3} · 生命力 {:.3}",
+            metrics.mass, metrics.entropy, metrics.stability, metrics.vitality
+        ));
+        let region = self.active_region();
+        if let Some((x, y)) = region.centroid {
+            ui.small(format!(
+                "活跃区域 {:.1}% · 质心 {:.1},{:.1} · 漂移 {:+.2},{:+.2}",
+                region.area_ratio * 100.0,
+                x,
+                y,
+                region.drift.0,
+                region.drift.1
+            ));
+        } else {
+            ui.small("活跃区域：暂无可检测结构。");
+        }
+        if self.mode == SimMode::ReactionDiffusion {
+            let stats = self.reaction.field_stats();
+            ui.small(format!(
+                "B 浓度 min {:.3} / max {:.3} / mean {:.3} · 最近变化 {:.4}",
+                stats.min, stats.max, stats.mean, stats.delta_mean
+            ));
+        }
+    }
+
+    fn draw_major_cases_panel(&mut self, ui: &mut egui::Ui) {
+        ui.heading("主要情况");
+        ui.small("这些案例覆盖稳定、周期、漂移、波纹、分裂、湍动和衰退。评委可一键载入，不需要先懂参数。");
+        ui.separator();
+
+        for (title, mode) in [
+            ("生命游戏 Game of Life", SimMode::GameOfLife),
+            ("反应扩散 Reaction-Diffusion", SimMode::ReactionDiffusion),
+            ("连续生命场 Lenia", SimMode::Lenia),
+        ] {
+            ui.collapsing(title, |ui| {
+                for case in major_cases().into_iter().filter(|case| case.mode == mode) {
+                    self.draw_major_case_card(ui, case);
+                }
+            });
+        }
+    }
+
+    fn draw_major_case_card(&mut self, ui: &mut egui::Ui, case: MajorCase) {
+        let active = self.active_major_case == Some(case.id);
+        egui::Frame::group(ui.style())
+            .fill(if active {
+                Color32::from_rgb(24, 44, 42)
+            } else {
+                Color32::from_rgb(14, 20, 23)
+            })
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    draw_case_swatch(ui, case);
+                    ui.vertical(|ui| {
+                        ui.strong(case.title_zh);
+                        ui.colored_label(Color32::from_rgb(255, 219, 128), case.behavior_label_zh);
+                    });
+                });
+                ui.small(case.explanation_zh);
+                ui.small(case.expected_outcome_zh);
+                if ui.button("载入并演示").clicked() {
+                    self.load_major_case(case);
+                }
+            });
+        ui.add_space(6.0);
+    }
+
+    fn draw_central_explanation_bar(&self, ui: &mut egui::Ui) {
+        if self.show_mode.enabled {
+            let scene = self.current_show_scene();
+            let total_progress =
+                (self.show_mode.total_elapsed / show_total_duration_secs()).clamp(0.0, 1.0);
+            egui::Frame::group(ui.style())
+                .fill(Color32::from_rgb(13, 20, 23))
+                .show(ui, |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.colored_label(Color32::from_rgb(100, 232, 218), scene.chapter);
+                        ui.strong(scene.title_zh);
+                        if self.show_mode.finished {
+                            ui.colored_label(Color32::from_rgb(255, 219, 128), "总结页");
+                        }
+                    });
+                    ui.label(scene.narration.core_question_zh);
+                    ui.small(scene.narration.conclusion_zh);
+                    ui.add(
+                        egui::ProgressBar::new(total_progress)
+                            .text(format!("演示总进度 {:.0}%", total_progress * 100.0)),
+                    );
+                });
+            ui.add_space(8.0);
+        } else if let Some(case_id) = self.active_major_case {
+            if let Some(case) = major_cases().into_iter().find(|case| case.id == case_id) {
+                egui::Frame::group(ui.style())
+                    .fill(Color32::from_rgb(13, 20, 23))
+                    .show(ui, |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.colored_label(
+                                Color32::from_rgb(255, 219, 128),
+                                case.behavior_label_zh,
+                            );
+                            ui.strong(case.title_zh);
+                        });
+                        ui.small(case.expected_outcome_zh);
+                    });
+                ui.add_space(8.0);
             }
         }
     }
@@ -3035,11 +3834,12 @@ impl eframe::App for PeterMathApp {
             .show(ctx, |ui| self.draw_right_panel(ui));
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            let available = ui.available_size();
-            let square = (available.x.min(available.y) - 28.0).max(320.0);
-            let size = egui::vec2(square, square);
             ui.vertical_centered(|ui| {
                 ui.add_space(8.0);
+                self.draw_central_explanation_bar(ui);
+                let available = ui.available_size();
+                let square = (available.x.min(available.y) - 28.0).max(320.0);
+                let size = egui::vec2(square, square);
                 if self.gpu_lenia_active() {
                     let render_start = Instant::now();
                     egui::Frame::canvas(ui.style()).show(ui, |ui| {
@@ -3061,14 +3861,12 @@ impl eframe::App for PeterMathApp {
                         let render_start = Instant::now();
                         let (w, h) = self.render_active();
                         let image = ColorImage::from_rgba_unmultiplied([w, h], &self.pixels);
+                        let texture_options = self.active_texture_options();
                         if let Some(texture) = &mut self.texture {
-                            texture.set(image, TextureOptions::LINEAR);
+                            texture.set(image, texture_options);
                         } else {
-                            self.texture = Some(ctx.load_texture(
-                                "peterMath-field",
-                                image,
-                                TextureOptions::LINEAR,
-                            ));
+                            self.texture =
+                                Some(ctx.load_texture("peterMath-field", image, texture_options));
                         }
                         self.cpu_texture_dirty = false;
                         render_duration += render_start.elapsed();
@@ -3202,6 +4000,79 @@ fn metric_bar(ui: &mut egui::Ui, label: &str, value: f32) {
     });
 }
 
+fn explanation_row(ui: &mut egui::Ui, label: &str, text: &str) {
+    ui.vertical(|ui| {
+        ui.colored_label(Color32::from_rgb(100, 232, 218), label);
+        ui.label(text);
+    });
+}
+
+fn formula_card(ui: &mut egui::Ui, formula: &str, variables: &str, algorithm: &str) {
+    egui::Frame::group(ui.style())
+        .fill(Color32::from_rgb(8, 12, 14))
+        .show(ui, |ui| {
+            ui.colored_label(Color32::from_rgb(255, 219, 128), "规则公式");
+            ui.monospace(formula);
+            ui.separator();
+            ui.small(format!("变量：{variables}"));
+            ui.small(format!("算法：{algorithm}"));
+        });
+}
+
+fn draw_case_swatch(ui: &mut egui::Ui, case: MajorCase) {
+    let desired = egui::vec2(48.0, 38.0);
+    let (rect, _) = ui.allocate_exact_size(desired, egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+    painter.rect_filled(rect, 4.0, Color32::from_rgb(5, 8, 10));
+    let accent = match case.mode {
+        SimMode::GameOfLife => Color32::from_rgb(216, 240, 139),
+        SimMode::ReactionDiffusion => Color32::from_rgb(255, 157, 102),
+        SimMode::Lenia => Color32::from_rgb(100, 232, 218),
+    };
+    painter.rect_stroke(
+        rect,
+        4.0,
+        egui::Stroke::new(1.0, accent),
+        egui::StrokeKind::Inside,
+    );
+    match case.mode {
+        SimMode::GameOfLife => {
+            for y in 0..4 {
+                for x in 0..5 {
+                    if (x + y + case.id.id().len()).is_multiple_of(3) {
+                        let r = egui::Rect::from_min_size(
+                            egui::pos2(
+                                rect.left() + 6.0 + x as f32 * 8.0,
+                                rect.top() + 5.0 + y as f32 * 7.0,
+                            ),
+                            egui::vec2(5.0, 5.0),
+                        );
+                        painter.rect_filled(r, 1.0, accent);
+                    }
+                }
+            }
+        }
+        SimMode::ReactionDiffusion => {
+            for i in 0..5 {
+                let x = rect.left() + 7.0 + i as f32 * 8.0;
+                painter.circle_filled(
+                    egui::pos2(x, rect.center().y + ((i % 2) as f32 - 0.5) * 10.0),
+                    4.0 + (i % 3) as f32,
+                    accent,
+                );
+            }
+        }
+        SimMode::Lenia => {
+            painter.circle_stroke(rect.center(), 13.0, egui::Stroke::new(2.0, accent));
+            painter.circle_filled(
+                egui::pos2(rect.center().x + 7.0, rect.center().y - 4.0),
+                4.0,
+                Color32::from_rgb(255, 118, 168),
+            );
+        }
+    }
+}
+
 fn show_mode_json_from_state(show_mode: &ShowModeState) -> serde_json::Value {
     if !show_mode.enabled {
         return serde_json::Value::Null;
@@ -3213,8 +4084,12 @@ fn show_mode_json_from_state(show_mode: &ShowModeState) -> serde_json::Value {
     json!({
         "enabled": show_mode.enabled,
         "playing": show_mode.playing,
+        "finished": show_mode.finished,
         "scene_id": scene.id.id(),
+        "chapter": scene.chapter,
         "scene_title_zh": scene.title_zh,
+        "case_id": scene.case_id.map(|id| id.id()),
+        "hold_on_finish": scene.hold_on_finish,
         "scene_index": show_mode.scene_index,
         "scene_elapsed_seconds": show_mode.scene_elapsed,
         "scene_duration_seconds": scene.duration_secs,
@@ -3222,9 +4097,12 @@ fn show_mode_json_from_state(show_mode: &ShowModeState) -> serde_json::Value {
         "total_elapsed_seconds": show_mode.total_elapsed,
         "total_duration_seconds": total_duration,
         "total_progress": (show_mode.total_elapsed / total_duration).clamp(0.0, 1.0),
+        "core_question_zh": scene.narration.core_question_zh,
         "initial_zh": scene.narration.initial_zh,
         "parameters_zh": scene.narration.parameters_zh,
         "formula_ascii": scene.narration.formula_ascii,
+        "variables_zh": scene.narration.variables_zh,
+        "algorithm_zh": scene.narration.algorithm_zh,
         "why_zh": scene.narration.why_zh,
         "conclusion_zh": scene.narration.conclusion_zh,
     })
@@ -3251,36 +4129,73 @@ mod tests {
     use std::collections::HashSet;
 
     #[test]
-    fn show_scenes_have_complete_ninety_second_script() {
+    fn show_scenes_have_complete_ten_minute_script() {
         let scenes = show_scenes();
         let total: f32 = scenes.iter().map(|scene| scene.duration_secs).sum();
-        assert!((total - 90.0).abs() < f32::EPSILON);
+        assert!(
+            (590.0..=610.0).contains(&total),
+            "unexpected total duration {total}"
+        );
 
         let mut ids = HashSet::new();
         for scene in scenes {
             assert!(ids.insert(scene.id.id()));
+            assert!(!scene.chapter.is_empty());
             assert!(!scene.title_zh.is_empty());
+            assert!(!scene.narration.core_question_zh.is_empty());
             assert!(!scene.narration.initial_zh.is_empty());
             assert!(!scene.narration.parameters_zh.is_empty());
             assert!(!scene.narration.formula_ascii.is_empty());
             assert!(scene.narration.formula_ascii.is_ascii());
+            assert!(!scene.narration.variables_zh.is_empty());
+            assert!(!scene.narration.algorithm_zh.is_empty());
             assert!(!scene.narration.why_zh.is_empty());
             assert!(!scene.narration.conclusion_zh.is_empty());
             assert!((1..=20).contains(&scene.step_rate));
+        }
+        assert!(scenes.last().is_some_and(|scene| scene.hold_on_finish));
+    }
+
+    #[test]
+    fn major_cases_have_complete_metadata_and_unique_ids() {
+        let mut ids = HashSet::new();
+        for case in major_cases() {
+            assert!(ids.insert(case.id.id()));
+            assert!(!case.title_zh.is_empty());
+            assert!(!case.behavior_label_zh.is_empty());
+            assert!(!case.explanation_zh.is_empty());
+            assert!(!case.expected_outcome_zh.is_empty());
+            assert!((1..=20).contains(&case.step_rate));
         }
     }
 
     #[test]
     fn show_mode_export_json_describes_current_scene() {
         let mut state = ShowModeState::enabled_default();
-        state.scene_index = 2;
+        state.scene_index = 9;
         state.scene_elapsed = 5.0;
-        state.total_elapsed = show_elapsed_before_scene(2) + 5.0;
+        state.total_elapsed = show_elapsed_before_scene(9) + 5.0;
         let value = show_mode_json_from_state(&state);
 
         assert_eq!(value["scene_id"], ShowSceneId::ReactionLabyrinth.id());
-        assert_eq!(value["scene_title_zh"], "反应扩散：迷宫生长");
+        assert_eq!(value["scene_title_zh"], "反应扩散：迷宫边界");
         assert!(value["formula_ascii"].as_str().unwrap().is_ascii());
+        assert!(value["variables_zh"].as_str().unwrap().contains("B"));
         assert!(value["total_progress"].as_f64().unwrap() > 0.0);
+    }
+
+    #[test]
+    fn show_mode_completion_keeps_enabled_until_exit() {
+        let mut state = ShowModeState::enabled_default();
+        state.scene_index = show_scenes().len() - 1;
+        state.scene_elapsed = show_scenes().last().unwrap().duration_secs;
+        state.total_elapsed = show_total_duration_secs();
+        state.playing = false;
+        state.finished = true;
+        let value = show_mode_json_from_state(&state);
+        assert_eq!(value["enabled"], true);
+        assert_eq!(value["playing"], false);
+        assert_eq!(value["finished"], true);
+        assert_eq!(value["hold_on_finish"], true);
     }
 }

@@ -25,18 +25,28 @@ fn main() -> anyhow::Result<()> {
     render_reaction_diffusion()?;
     render_judge_reference()?;
     render_show_mode_storyboard()?;
+    render_long_show_storyboard()?;
+    render_major_cases_gallery()?;
+    render_reaction_comparison()?;
+    render_life_teaching_reference()?;
+    render_lenia_explanation_reference()?;
     println!("Wrote peterMath_exports/previews/lenia_hero.png");
     println!("Wrote peterMath_exports/previews/reaction_diffusion_texture.png");
     println!("Wrote peterMath_exports/previews/judge_mode_reference.png");
     println!("Wrote peterMath_exports/previews/lenia_showcase.png");
     println!("Wrote peterMath_exports/previews/reaction_diffusion_showcase.png");
     println!("Wrote peterMath_exports/previews/show_mode_storyboard.png");
+    println!("Wrote peterMath_exports/previews/show_mode_long_storyboard.png");
+    println!("Wrote peterMath_exports/previews/major_cases_gallery.png");
+    println!("Wrote peterMath_exports/previews/reaction_diffusion_comparison.png");
+    println!("Wrote peterMath_exports/previews/life_teaching_reference.png");
+    println!("Wrote peterMath_exports/previews/lenia_explanation_reference.png");
     Ok(())
 }
 
 fn render_lenia() -> anyhow::Result<()> {
-    let mut sim = LeniaSim::new(192, 192, 1001);
-    for _ in 0..240 {
+    let mut sim = LeniaSim::new(128, 128, 1001);
+    for _ in 0..120 {
         sim.step();
     }
     let (w, h) = sim.size();
@@ -58,9 +68,9 @@ fn render_lenia() -> anyhow::Result<()> {
 }
 
 fn render_reaction_diffusion() -> anyhow::Result<()> {
-    let mut sim = ReactionDiffusionSim::new(192, 192, 2001);
+    let mut sim = ReactionDiffusionSim::new(128, 128, 2001);
     sim.reset_preset("labyrinth");
-    for _ in 0..1200 {
+    for _ in 0..520 {
         sim.step();
     }
     let (w, h) = sim.size();
@@ -82,8 +92,8 @@ fn render_reaction_diffusion() -> anyhow::Result<()> {
 }
 
 fn render_judge_reference() -> anyhow::Result<()> {
-    let mut sim = LeniaSim::new(192, 192, 1001);
-    for _ in 0..160 {
+    let mut sim = LeniaSim::new(128, 128, 1001);
+    for _ in 0..90 {
         sim.step();
     }
 
@@ -135,10 +145,10 @@ fn render_show_mode_storyboard() -> anyhow::Result<()> {
     let tiles = [
         storyboard_lenia("orbital_field", 24),
         storyboard_life_structure(32),
-        storyboard_reaction("labyrinth", 640),
-        storyboard_reaction("mitosis", 420),
-        storyboard_lenia("orbital_field", 180),
-        storyboard_lenia("dense_bloom", 150),
+        storyboard_reaction("labyrinth", 320),
+        storyboard_reaction("mitosis", 240),
+        storyboard_lenia("orbital_field", 36),
+        storyboard_lenia("dense_bloom", 4),
     ];
     let accent = [
         [100, 232, 218, 255],
@@ -175,8 +185,222 @@ fn render_show_mode_storyboard() -> anyhow::Result<()> {
     )
 }
 
+fn render_long_show_storyboard() -> anyhow::Result<()> {
+    let tile = 160;
+    let gap = 12;
+    let cols = 5;
+    let rows = 4;
+    let out_w = tile * cols + gap * (cols + 1);
+    let out_h = tile * rows + gap * (rows + 1);
+    let mut out = vec![0; out_w * out_h * 4];
+    fill_rect(&mut out, out_w, 0, 0, out_w, out_h, [5, 8, 10, 255]);
+
+    let tiles = [
+        storyboard_lenia_sized("orbital_field", 24, tile),
+        storyboard_life_preset("structure_showcase", 8, tile),
+        storyboard_reaction_sized("labyrinth", 220, tile),
+        storyboard_lenia_sized("orbital_field", 26, tile),
+        storyboard_lenia_sized("twin_organisms", 26, tile),
+        storyboard_life_preset("still_lifes", 4, tile),
+        storyboard_life_preset("oscillators", 8, tile),
+        storyboard_life_preset("glider_lane", 24, tile),
+        storyboard_reaction_sized("spots", 160, tile),
+        storyboard_reaction_sized("labyrinth", 220, tile),
+        storyboard_reaction_sized("waves", 180, tile),
+        storyboard_reaction_sized("mitosis", 180, tile),
+        storyboard_lenia_sized("orbital_field", 34, tile),
+        storyboard_lenia_sized("twin_organisms", 32, tile),
+        storyboard_lenia_sized("kernel_ring", 32, tile),
+        storyboard_lenia_sized("dense_bloom", 4, tile),
+        storyboard_lenia_sized("coral_drift", 28, tile),
+    ];
+
+    for (i, image) in tiles.iter().enumerate() {
+        let col = i % cols;
+        let row = i / cols;
+        let x = gap + col * (tile + gap);
+        let y = gap + row * (tile + gap);
+        fill_rect(
+            &mut out,
+            out_w,
+            x - 2,
+            y - 2,
+            tile + 4,
+            tile + 4,
+            [16, 24, 28, 255],
+        );
+        let accent = if i < 5 {
+            [100, 232, 218, 255]
+        } else if i < 8 {
+            [216, 240, 139, 255]
+        } else if i < 12 {
+            [255, 157, 102, 255]
+        } else {
+            [255, 118, 168, 255]
+        };
+        fill_rect(&mut out, out_w, x - 2, y - 2, tile + 4, 6, accent);
+        blit_rgba_at(image, tile, tile, &mut out, out_w, x, y);
+    }
+
+    export::save_png(
+        "peterMath_exports/previews/show_mode_long_storyboard.png",
+        out_w,
+        out_h,
+        &out,
+    )
+}
+
+fn render_major_cases_gallery() -> anyhow::Result<()> {
+    let tile = 192;
+    let gap = 14;
+    let cols = 4;
+    let rows = 3;
+    let out_w = tile * cols + gap * (cols + 1);
+    let out_h = tile * rows + gap * (rows + 1);
+    let mut out = vec![0; out_w * out_h * 4];
+    fill_rect(&mut out, out_w, 0, 0, out_w, out_h, [5, 8, 10, 255]);
+    let tiles = [
+        storyboard_life_preset("still_lifes", 3, tile),
+        storyboard_life_preset("oscillators", 8, tile),
+        storyboard_life_preset("glider_lane", 28, tile),
+        storyboard_reaction_sized("spots", 180, tile),
+        storyboard_reaction_sized("labyrinth", 240, tile),
+        storyboard_reaction_sized("waves", 200, tile),
+        storyboard_reaction_sized("mitosis", 200, tile),
+        storyboard_lenia_sized("orbital_field", 36, tile),
+        storyboard_lenia_sized("twin_organisms", 34, tile),
+        storyboard_lenia_sized("kernel_ring", 34, tile),
+        storyboard_lenia_sized("dense_bloom", 4, tile),
+        storyboard_lenia_sized("coral_drift", 30, tile),
+    ];
+    for (i, image) in tiles.iter().enumerate() {
+        let col = i % cols;
+        let row = i / cols;
+        let x = gap + col * (tile + gap);
+        let y = gap + row * (tile + gap);
+        fill_rect(
+            &mut out,
+            out_w,
+            x - 2,
+            y - 2,
+            tile + 4,
+            tile + 4,
+            [16, 24, 28, 255],
+        );
+        blit_rgba_at(image, tile, tile, &mut out, out_w, x, y);
+    }
+    export::save_png(
+        "peterMath_exports/previews/major_cases_gallery.png",
+        out_w,
+        out_h,
+        &out,
+    )
+}
+
+fn render_reaction_comparison() -> anyhow::Result<()> {
+    let tile = 224;
+    let gap = 18;
+    let out_w = tile * 4 + gap * 5;
+    let out_h = tile + gap * 2;
+    let mut out = vec![0; out_w * out_h * 4];
+    fill_rect(&mut out, out_w, 0, 0, out_w, out_h, [5, 8, 10, 255]);
+    for (i, preset) in ["spots", "labyrinth", "waves", "mitosis"]
+        .iter()
+        .enumerate()
+    {
+        let image = storyboard_reaction_sized(preset, 220, tile);
+        let x = gap + i * (tile + gap);
+        let y = gap;
+        fill_rect(
+            &mut out,
+            out_w,
+            x - 2,
+            y - 2,
+            tile + 4,
+            tile + 4,
+            [16, 24, 28, 255],
+        );
+        blit_rgba_at(&image, tile, tile, &mut out, out_w, x, y);
+    }
+    export::save_png(
+        "peterMath_exports/previews/reaction_diffusion_comparison.png",
+        out_w,
+        out_h,
+        &out,
+    )
+}
+
+fn render_life_teaching_reference() -> anyhow::Result<()> {
+    let tile = 224;
+    let gap = 18;
+    let out_w = tile * 3 + gap * 4;
+    let out_h = tile + gap * 2;
+    let mut out = vec![0; out_w * out_h * 4];
+    fill_rect(&mut out, out_w, 0, 0, out_w, out_h, [5, 8, 10, 255]);
+    for (i, (preset, steps)) in [("still_lifes", 3), ("oscillators", 9), ("glider_lane", 36)]
+        .iter()
+        .enumerate()
+    {
+        let image = storyboard_life_preset(preset, *steps, tile);
+        let x = gap + i * (tile + gap);
+        let y = gap;
+        fill_rect(
+            &mut out,
+            out_w,
+            x - 2,
+            y - 2,
+            tile + 4,
+            tile + 4,
+            [16, 24, 28, 255],
+        );
+        blit_rgba_at(&image, tile, tile, &mut out, out_w, x, y);
+    }
+    export::save_png(
+        "peterMath_exports/previews/life_teaching_reference.png",
+        out_w,
+        out_h,
+        &out,
+    )
+}
+
+fn render_lenia_explanation_reference() -> anyhow::Result<()> {
+    let mut sim = LeniaSim::new(128, 128, 1001);
+    sim.reset_preset("kernel_ring");
+    for _ in 0..56 {
+        sim.step();
+    }
+    let (w, h) = sim.size();
+    let mut pixels = vec![0; w * h * 4];
+    sim.render_rgba(RenderStyle::Artistic, &mut pixels);
+    let art = upscale_rgba(&pixels, w, h, PREVIEW_SIZE, PREVIEW_SIZE);
+    let explanation = render_explanation_panel(&sim, EXPLANATION_PANEL_WIDTH, PREVIEW_SIZE);
+    let gap = JUDGE_GAP;
+    let out_w = PREVIEW_SIZE + EXPLANATION_PANEL_WIDTH + gap;
+    let mut out = vec![0; out_w * PREVIEW_SIZE * 4];
+    blit_rgba(&art, PREVIEW_SIZE, PREVIEW_SIZE, &mut out, out_w, 0);
+    blit_rgba(
+        &explanation,
+        EXPLANATION_PANEL_WIDTH,
+        PREVIEW_SIZE,
+        &mut out,
+        out_w,
+        PREVIEW_SIZE + gap,
+    );
+    export::save_png(
+        "peterMath_exports/previews/lenia_explanation_reference.png",
+        out_w,
+        PREVIEW_SIZE,
+        &out,
+    )
+}
+
 fn storyboard_lenia(preset: &str, steps: usize) -> Vec<u8> {
-    let mut sim = LeniaSim::new(192, 192, 1001);
+    storyboard_lenia_sized(preset, steps, 256)
+}
+
+fn storyboard_lenia_sized(preset: &str, steps: usize, size: usize) -> Vec<u8> {
+    let source_size = if preset == "dense_bloom" { 128 } else { 64 };
+    let mut sim = LeniaSim::new(source_size, source_size, 1001);
     sim.reset_preset(preset);
     for _ in 0..steps {
         sim.step();
@@ -184,23 +408,15 @@ fn storyboard_lenia(preset: &str, steps: usize) -> Vec<u8> {
     let (w, h) = sim.size();
     let mut pixels = vec![0; w * h * 4];
     sim.render_rgba(RenderStyle::Artistic, &mut pixels);
-    upscale_rgba(&pixels, w, h, 256, 256)
+    upscale_rgba(&pixels, w, h, size, size)
 }
 
 fn storyboard_life_structure(steps: usize) -> Vec<u8> {
-    let mut sim = LifeSim::new(96, 96, 3001);
-    sim.reset_preset("structure_showcase");
-    for _ in 0..steps {
-        sim.step();
-    }
-    let (w, h) = sim.size();
-    let mut pixels = vec![0; w * h * 4];
-    sim.render_rgba(RenderStyle::Artistic, &mut pixels);
-    upscale_rgba(&pixels, w, h, 256, 256)
+    storyboard_life_preset("structure_showcase", steps, 256)
 }
 
-fn storyboard_reaction(preset: &str, steps: usize) -> Vec<u8> {
-    let mut sim = ReactionDiffusionSim::new(192, 192, 2001);
+fn storyboard_life_preset(preset: &str, steps: usize, size: usize) -> Vec<u8> {
+    let mut sim = LifeSim::new(96, 96, 3001);
     sim.reset_preset(preset);
     for _ in 0..steps {
         sim.step();
@@ -208,7 +424,23 @@ fn storyboard_reaction(preset: &str, steps: usize) -> Vec<u8> {
     let (w, h) = sim.size();
     let mut pixels = vec![0; w * h * 4];
     sim.render_rgba(RenderStyle::Artistic, &mut pixels);
-    upscale_rgba(&pixels, w, h, 256, 256)
+    nearest_upscale_rgba(&pixels, w, h, size, size)
+}
+
+fn storyboard_reaction(preset: &str, steps: usize) -> Vec<u8> {
+    storyboard_reaction_sized(preset, steps, 256)
+}
+
+fn storyboard_reaction_sized(preset: &str, steps: usize, size: usize) -> Vec<u8> {
+    let mut sim = ReactionDiffusionSim::new(128, 128, 2001);
+    sim.reset_preset(preset);
+    for _ in 0..steps {
+        sim.step();
+    }
+    let (w, h) = sim.size();
+    let mut pixels = vec![0; w * h * 4];
+    sim.render_rgba(RenderStyle::Artistic, &mut pixels);
+    upscale_rgba(&pixels, w, h, size, size)
 }
 
 fn render_explanation_panel(sim: &LeniaSim, panel_w: usize, panel_h: usize) -> Vec<u8> {
@@ -352,6 +584,26 @@ fn upscale_rgba(
                 let bottom = c01 + (c11 - c01) * tx;
                 out[target_i + channel] = (top + (bottom - top) * ty).round() as u8;
             }
+        }
+    }
+    out
+}
+
+fn nearest_upscale_rgba(
+    source: &[u8],
+    source_w: usize,
+    source_h: usize,
+    target_w: usize,
+    target_h: usize,
+) -> Vec<u8> {
+    let mut out = vec![0; target_w * target_h * 4];
+    for y in 0..target_h {
+        let sy = (y * source_h / target_h).min(source_h - 1);
+        for x in 0..target_w {
+            let sx = (x * source_w / target_w).min(source_w - 1);
+            let target_i = (y * target_w + x) * 4;
+            let source_i = (sy * source_w + sx) * 4;
+            out[target_i..target_i + 4].copy_from_slice(&source[source_i..source_i + 4]);
         }
     }
     out

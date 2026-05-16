@@ -1,5 +1,4 @@
 use crate::metrics::Metrics;
-use crate::palette;
 use crate::simulation::{wrap_index, RenderStyle};
 use std::collections::{HashSet, VecDeque};
 
@@ -249,6 +248,9 @@ impl LifeSim {
         match preset {
             "symmetric_seed" => self.seed_symmetric(),
             "structure_showcase" => self.seed_structure_showcase(),
+            "still_lifes" => self.seed_still_lifes(),
+            "oscillators" => self.seed_oscillators(),
+            "glider_lane" => self.seed_glider_lane(),
             _ => self.reset_random(),
         }
         self.previous_age.copy_from_slice(&self.age);
@@ -498,38 +500,62 @@ impl LifeSim {
     }
 
     fn seed_structure_showcase(&mut self) {
-        self.place_pattern(0.12, 0.12, &[(0, 0), (1, 0), (0, 1), (1, 1)]);
-        self.place_pattern(
-            0.32,
-            0.12,
-            &[(1, 0), (2, 0), (0, 1), (3, 1), (1, 2), (2, 2)],
-        );
-        self.place_pattern(
-            0.53,
-            0.12,
-            &[(1, 0), (2, 0), (0, 1), (3, 1), (1, 2), (3, 2), (2, 3)],
-        );
-        self.place_pattern(0.16, 0.44, &[(0, 0), (1, 0), (2, 0)]);
-        self.place_pattern(
-            0.36,
-            0.44,
-            &[(1, 0), (2, 0), (3, 0), (0, 1), (1, 1), (2, 1)],
-        );
-        self.place_pattern(
-            0.58,
-            0.42,
-            &[
-                (0, 0),
-                (1, 0),
-                (0, 1),
-                (1, 1),
-                (2, 2),
-                (3, 2),
-                (2, 3),
-                (3, 3),
-            ],
-        );
-        self.place_pattern(0.12, 0.68, &[(1, 0), (2, 1), (0, 2), (1, 2), (2, 2)]);
+        self.seed_still_lifes();
+        self.seed_oscillators();
+        self.seed_glider_lane();
+    }
+
+    fn seed_still_lifes(&mut self) {
+        let block = &[(0, 0), (1, 0), (0, 1), (1, 1)];
+        let beehive = &[(1, 0), (2, 0), (0, 1), (3, 1), (1, 2), (2, 2)];
+        let loaf = &[(1, 0), (2, 0), (0, 1), (3, 1), (1, 2), (3, 2), (2, 3)];
+        for (x, y, pattern) in [
+            (0.10, 0.11, block.as_slice()),
+            (0.28, 0.12, beehive.as_slice()),
+            (0.48, 0.11, loaf.as_slice()),
+            (0.70, 0.12, block.as_slice()),
+            (0.84, 0.18, beehive.as_slice()),
+            (0.16, 0.28, loaf.as_slice()),
+        ] {
+            self.place_pattern(x, y, pattern);
+        }
+    }
+
+    fn seed_oscillators(&mut self) {
+        let blinker = &[(0, 0), (1, 0), (2, 0)];
+        let toad = &[(1, 0), (2, 0), (3, 0), (0, 1), (1, 1), (2, 1)];
+        let beacon = &[
+            (0, 0),
+            (1, 0),
+            (0, 1),
+            (1, 1),
+            (2, 2),
+            (3, 2),
+            (2, 3),
+            (3, 3),
+        ];
+        for (x, y, pattern) in [
+            (0.10, 0.47, blinker.as_slice()),
+            (0.27, 0.45, toad.as_slice()),
+            (0.48, 0.43, beacon.as_slice()),
+            (0.70, 0.48, blinker.as_slice()),
+            (0.82, 0.43, toad.as_slice()),
+        ] {
+            self.place_pattern(x, y, pattern);
+        }
+    }
+
+    fn seed_glider_lane(&mut self) {
+        let glider = &[(1, 0), (2, 1), (0, 2), (1, 2), (2, 2)];
+        for (x, y) in [
+            (0.10, 0.70),
+            (0.22, 0.78),
+            (0.36, 0.70),
+            (0.52, 0.78),
+            (0.68, 0.70),
+        ] {
+            self.place_pattern(x, y, glider);
+        }
     }
 
     fn place_pattern(&mut self, x_ratio: f32, y_ratio: f32, cells: &[(i32, i32)]) {
@@ -585,6 +611,8 @@ impl LifeSim {
 
     pub fn render_rgba(&self, style: RenderStyle, out: &mut [u8]) {
         for (i, px) in out.chunks_exact_mut(4).enumerate() {
+            let x = i % self.w;
+            let y = i / self.w;
             let v = self.age[i];
             let rgba = match style {
                 RenderStyle::RawMath => {
@@ -594,7 +622,24 @@ impl LifeSim {
                         [16, 16, 16, 255]
                     }
                 }
-                RenderStyle::Artistic => palette::scientific(v),
+                RenderStyle::Artistic => {
+                    let grid = x.is_multiple_of(8) || y.is_multiple_of(8);
+                    if self.cells.get(i) {
+                        [214, 246, 153, 255]
+                    } else if v > 0.10 {
+                        let tail = v.clamp(0.0, 1.0);
+                        [
+                            (34.0 + 80.0 * tail) as u8,
+                            (54.0 + 80.0 * tail) as u8,
+                            (74.0 + 150.0 * tail) as u8,
+                            255,
+                        ]
+                    } else if grid {
+                        [22, 30, 33, 255]
+                    } else {
+                        [6, 10, 12, 255]
+                    }
+                }
             };
             px.copy_from_slice(&rgba);
         }
@@ -851,6 +896,54 @@ mod tests {
             .and_then(|track| track.direction)
             .expect("tracked glider direction");
         assert!(moved.0.abs() > 0.1 || moved.1.abs() > 0.1);
+    }
+
+    #[test]
+    fn major_life_presets_expose_expected_pattern_classes() {
+        let mut still = LifeSim::new(96, 96, 3001);
+        still.reset_preset("still_lifes");
+        let report = still.detect_known_patterns(&[], 0, None);
+        assert!(report.detections.iter().any(|detection| matches!(
+            detection.pattern,
+            KnownPattern::Block | KnownPattern::Beehive | KnownPattern::Loaf
+        )));
+
+        let mut oscillators = LifeSim::new(96, 96, 3001);
+        oscillators.reset_preset("oscillators");
+        let report = oscillators.detect_known_patterns(&[], 0, None);
+        assert!(report.detections.iter().any(|detection| matches!(
+            detection.pattern,
+            KnownPattern::Blinker | KnownPattern::Toad | KnownPattern::Beacon
+        )));
+
+        let mut gliders = LifeSim::new(96, 96, 3001);
+        gliders.reset_preset("glider_lane");
+        let report = gliders.detect_known_patterns(&[], 0, None);
+        assert!(report
+            .detections
+            .iter()
+            .any(|detection| detection.pattern == KnownPattern::Glider));
+    }
+
+    #[test]
+    fn teaching_render_has_clear_alive_cells_and_tail_contrast() {
+        let mut sim = LifeSim::new(96, 96, 3001);
+        sim.reset_preset("structure_showcase");
+        for _ in 0..4 {
+            sim.step();
+        }
+        let mut pixels = vec![0; 96 * 96 * 4];
+        sim.render_rgba(RenderStyle::Artistic, &mut pixels);
+        let bright = pixels
+            .chunks_exact(4)
+            .filter(|px| px[0] > 180 && px[1] > 180)
+            .count();
+        let tail = pixels
+            .chunks_exact(4)
+            .filter(|px| px[2] > px[0] && px[2] > 80)
+            .count();
+        assert!(bright > 12, "expected visible current cells");
+        assert!(tail > 12, "expected visible trails");
     }
 
     fn assert_detects(rle: &str, expected: KnownPattern) {
