@@ -2244,6 +2244,8 @@ impl PeterMathApp {
 
     fn draw_overview(&mut self, ctx: &egui::Context, ui: &mut egui::Ui) {
         self.refresh_overview_textures(ctx);
+        ui.painter()
+            .rect_filled(ui.max_rect(), 0.0, Color32::from_rgb(7, 10, 12));
         ui.vertical_centered(|ui| {
             ui.add_space(12.0);
             ui.heading("三种数学生命系统导览");
@@ -2271,26 +2273,72 @@ impl PeterMathApp {
 
         ui.add_space(10.0);
         let focused_card = self.overview_card(self.overview_focus);
-        let focused_texture = self.overview_texture(self.overview_focus);
-        let available = ui.available_size();
-        let side = (available.x * 0.58)
-            .min((available.y - 148.0).max(380.0))
-            .clamp(380.0, 640.0);
-        let mut enter = None;
-        ui.horizontal(|ui| {
-            egui::Frame::canvas(ui.style()).show(ui, |ui| {
-                if let Some(texture) = focused_texture {
-                    ui.add(egui::Image::new((texture.id(), egui::vec2(side, side))));
-                } else {
-                    ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::hover());
-                }
-            });
+        let focused_texture_id = self
+            .overview_texture(self.overview_focus)
+            .map(|texture| texture.id());
+        let body_height = (ui.available_height() - 210.0).clamp(430.0, 660.0);
+        let (body_rect, _) = ui.allocate_exact_size(
+            egui::vec2(ui.available_width(), body_height),
+            egui::Sense::hover(),
+        );
+        let painter = ui.painter_at(body_rect);
+        painter.rect_filled(body_rect, 8.0, Color32::from_rgb(9, 13, 15));
+        painter.rect_stroke(
+            body_rect,
+            8.0,
+            egui::Stroke::new(1.0, Color32::from_rgb(34, 48, 54)),
+            egui::StrokeKind::Inside,
+        );
 
-            ui.add_space(14.0);
-            if Self::draw_overview_card(ui, focused_card, self.overview_focus) {
-                enter = Some(self.overview_focus);
-            }
-        });
+        let graph_side = (body_rect.height() - 28.0)
+            .min(body_rect.width() * 0.58)
+            .clamp(300.0, 620.0);
+        let graph_rect = egui::Rect::from_min_size(
+            body_rect.min + egui::vec2(14.0, 14.0),
+            egui::vec2(graph_side, graph_side),
+        );
+        painter.rect_filled(graph_rect, 4.0, Color32::from_rgb(3, 6, 8));
+        if let Some(texture_id) = focused_texture_id {
+            painter.image(
+                texture_id,
+                graph_rect.shrink(4.0),
+                egui::Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::new(1.0, 1.0)),
+                Color32::WHITE,
+            );
+        } else {
+            painter.text(
+                graph_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "图像纹理正在加载",
+                egui::FontId::proportional(18.0),
+                Color32::from_rgb(220, 235, 235),
+            );
+        }
+        painter.rect_stroke(
+            graph_rect,
+            4.0,
+            egui::Stroke::new(2.0, Color32::from_rgb(94, 197, 255)),
+            egui::StrokeKind::Inside,
+        );
+
+        let card_rect = egui::Rect::from_min_max(
+            egui::pos2(graph_rect.right() + 18.0, graph_rect.top()),
+            egui::pos2(body_rect.right() - 14.0, graph_rect.bottom()),
+        );
+        let mut enter = None;
+        ui.scope_builder(
+            egui::UiBuilder::new()
+                .max_rect(card_rect)
+                .layout(egui::Layout::top_down(egui::Align::Min)),
+            |ui| {
+                ui.set_width(card_rect.width());
+                ui.set_max_width(card_rect.width());
+                ui.set_min_height(card_rect.height());
+                if Self::draw_overview_card(ui, focused_card, self.overview_focus) {
+                    enter = Some(self.overview_focus);
+                }
+            },
+        );
 
         ui.add_space(10.0);
         ui.label("切换对照：");
