@@ -8,6 +8,8 @@ use crate::simulation::reaction_diffusion::ReactionDiffusionSim;
 use crate::simulation::{RenderStyle, SimMode};
 use egui::{Color32, ColorImage, TextureHandle, TextureOptions};
 use serde_json::{json, Value};
+use std::fs;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 const HISTORY_LIMIT: usize = 32;
@@ -3150,6 +3152,8 @@ fn lenia_params(lenia: &LeniaSim) -> GpuLeniaParams {
 }
 
 fn configure_style(ctx: &egui::Context) {
+    configure_chinese_fonts(ctx);
+
     let mut style = (*ctx.style()).clone();
     style.visuals = egui::Visuals::dark();
     style.visuals.panel_fill = Color32::from_rgb(12, 16, 18);
@@ -3161,6 +3165,63 @@ fn configure_style(ctx: &egui::Context) {
     style.spacing.item_spacing = egui::vec2(8.0, 8.0);
     style.spacing.slider_width = 170.0;
     ctx.set_style(style);
+}
+
+fn configure_chinese_fonts(ctx: &egui::Context) {
+    let Some((font_name, font_bytes)) = load_chinese_font() else {
+        eprintln!(
+            "peterMath warning: no Chinese-capable system font found; GUI CJK text may not render."
+        );
+        return;
+    };
+
+    let mut fonts = egui::FontDefinitions::default();
+    fonts.font_data.insert(
+        font_name.clone(),
+        Arc::new(egui::FontData::from_owned(font_bytes)),
+    );
+
+    for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+        let entry = fonts.families.entry(family).or_default();
+        if !entry.iter().any(|name| name == &font_name) {
+            let insert_at = entry.len().min(1);
+            entry.insert(insert_at, font_name.clone());
+        }
+    }
+
+    ctx.set_fonts(fonts);
+}
+
+fn load_chinese_font() -> Option<(String, Vec<u8>)> {
+    let candidates = [
+        // Windows
+        "C:/Windows/Fonts/msyh.ttf",
+        "C:/Windows/Fonts/simhei.ttf",
+        "C:/Windows/Fonts/Deng.ttf",
+        "C:/Windows/Fonts/msyh.ttc",
+        "C:/Windows/Fonts/simsun.ttc",
+        // macOS
+        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        "/System/Library/Fonts/Supplemental/NISC18030.ttf",
+        "/System/Library/Fonts/STHeiti Medium.ttc",
+        "/System/Library/Fonts/PingFang.ttc",
+        "/Library/Fonts/Arial Unicode.ttf",
+        // Linux
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.otf",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+    ];
+
+    for path in candidates {
+        if let Ok(bytes) = fs::read(path) {
+            return Some((
+                format!("peterMath-cjk-{}", path.replace(['/', '\\', ':'], "_")),
+                bytes,
+            ));
+        }
+    }
+    None
 }
 
 fn metric_bar(ui: &mut egui::Ui, label: &str, value: f32) {
