@@ -1,7 +1,7 @@
 use crate::export;
 use crate::gpu::{self, GpuLeniaArt, GpuLeniaParams};
 use crate::metrics::Metrics;
-use crate::simulation::lenia::{LeniaSim, LeniaState};
+use crate::simulation::lenia::{LeniaInspection, LeniaSim, LeniaState};
 use crate::simulation::life::LifeSim;
 use crate::simulation::reaction_diffusion::ReactionDiffusionSim;
 use crate::simulation::{RenderStyle, SimMode};
@@ -10,6 +10,7 @@ use serde_json::json;
 use std::time::{Duration, Instant};
 
 const HISTORY_LIMIT: usize = 32;
+const METRIC_HISTORY_LIMIT: usize = 180;
 
 pub struct PeterMathApp {
     mode: SimMode,
@@ -31,6 +32,9 @@ pub struct PeterMathApp {
     undo_stack: Vec<LeniaHistorySnapshot>,
     redo_stack: Vec<LeniaHistorySnapshot>,
     pointer_edit_active: bool,
+    inspected_lenia: Option<LeniaInspection>,
+    show_kernel_overlay: bool,
+    metric_history: Vec<MetricHistorySample>,
     steps_per_frame: usize,
     step_count: u64,
     pixels: Vec<u8>,
@@ -80,6 +84,26 @@ struct LeniaHistorySnapshot {
     active_preset: LeniaPreset,
     grid_profile: GridProfile,
     random_density: f32,
+}
+
+#[derive(Clone, Copy)]
+struct MetricHistorySample {
+    step_count: u64,
+    mass: f32,
+    entropy: f32,
+    stability: f32,
+    vitality: f32,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LeniaPhase {
+    Sparse,
+    Blooming,
+    Drifting,
+    Stabilizing,
+    Turbulent,
+    Dense,
+    Fading,
 }
 
 impl InteractionTool {
@@ -135,6 +159,17 @@ impl LeniaPreset {
             Self::DenseBloom => "dense_bloom",
         }
     }
+
+    fn description(self) -> &'static str {
+        match self {
+            Self::OrbitalField => "A spiral seed distribution exposes rotating gradients and soft kernel transport.",
+            Self::TwinOrganisms => "Two mirrored masses reveal how shared rules can diverge into distinct living forms.",
+            Self::CoralDrift => "A branching seed path emphasizes ridge growth, decay, and boundary competition.",
+            Self::KernelRing => "Circular mass bands make the radial neighborhood kernel visibly legible.",
+            Self::SparseSoup => "Low-density random mass tests whether small islands can self-organize.",
+            Self::DenseBloom => "High-density mass pushes the field toward saturation, turbulence, and collapse.",
+        }
+    }
 }
 
 impl LeniaStamp {
@@ -165,6 +200,22 @@ impl LeniaStamp {
             Self::NoisePatch => "noise_patch",
         }
     }
+
+    fn description(self) -> &'static str {
+        match self {
+            Self::SoftCell => "A single Gaussian mass for testing local growth response.",
+            Self::RingSeed => {
+                "A radial stamp aligned with the kernel's circular sampling geometry."
+            }
+            Self::TwinSeed => {
+                "Paired masses that either merge, repel, or orbit under the same rule."
+            }
+            Self::ArcSeed => "A partial ring that exposes asymmetric gradient flow.",
+            Self::NoisePatch => {
+                "Seeded microstructure for provoking local instability and texture."
+            }
+        }
+    }
 }
 
 impl GridProfile {
@@ -187,12 +238,74 @@ impl GridProfile {
     }
 }
 
+impl MetricHistorySample {
+    fn from_metrics(step_count: u64, metrics: Metrics) -> Self {
+        Self {
+            step_count,
+            mass: metrics.mass,
+            entropy: metrics.entropy,
+            stability: metrics.stability,
+            vitality: metrics.vitality,
+        }
+    }
+}
+
+impl LeniaPhase {
+    fn from_metrics(metrics: Metrics, mass_trend: f32) -> Self {
+        if metrics.mass < 0.012 || metrics.active < 24 {
+            return Self::Sparse;
+        }
+        if mass_trend < -0.010 && metrics.vitality < 0.32 {
+            return Self::Fading;
+        }
+        if metrics.mass > 0.44 {
+            return Self::Dense;
+        }
+        if metrics.stability > 0.965 && metrics.vitality < 0.42 {
+            return Self::Stabilizing;
+        }
+        if (1.0 - metrics.stability) > 0.18 && metrics.entropy > 0.42 {
+            return Self::Turbulent;
+        }
+        if mass_trend > 0.006 || metrics.vitality > 0.58 {
+            return Self::Blooming;
+        }
+        Self::Drifting
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Sparse => "sparse",
+            Self::Blooming => "blooming",
+            Self::Drifting => "drifting",
+            Self::Stabilizing => "stabilizing",
+            Self::Turbulent => "turbulent",
+            Self::Dense => "dense",
+            Self::Fading => "fading",
+        }
+    }
+
+    fn description(self) -> &'static str {
+        match self {
+            Self::Sparse => "field mass is low; only a few regions can still organize",
+            Self::Blooming => "mass or vitality is rising; the field is actively forming structure",
+            Self::Drifting => "structure persists while the field continues to move",
+            Self::Stabilizing => "successive fields are close; motion is settling",
+            Self::Turbulent => "entropy and change are high; boundaries are competing",
+            Self::Dense => "field mass is high; growth risks saturation",
+            Self::Fading => "mass and vitality are falling; the field is losing structure",
+        }
+    }
+}
+
 impl PeterMathApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         configure_style(&cc.egui_ctx);
         let width = 192;
         let render_style = RenderStyle::Artistic;
         let lenia = LeniaSim::new(width, width, 1001);
+        let inspected_lenia = Some(lenia.inspect_point(width / 2, width / 2));
+        let metric_history = vec![MetricHistorySample::from_metrics(0, lenia.metrics())];
         let gpu_lenia = cc.wgpu_render_state.as_ref().and_then(|render_state| {
             GpuLeniaArt::new(
                 render_state,
@@ -226,6 +339,9 @@ impl PeterMathApp {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             pointer_edit_active: false,
+            inspected_lenia,
+            show_kernel_overlay: false,
+            metric_history,
             steps_per_frame: 1,
             step_count: 0,
             pixels: vec![0; width * width * 4],
@@ -269,6 +385,45 @@ impl PeterMathApp {
         }
     }
 
+    fn record_metric_history(&mut self) {
+        let sample = MetricHistorySample::from_metrics(self.step_count, self.active_metrics());
+        if let Some(last) = self.metric_history.last_mut() {
+            if last.step_count == sample.step_count {
+                *last = sample;
+                return;
+            }
+        }
+        self.metric_history.push(sample);
+        if self.metric_history.len() > METRIC_HISTORY_LIMIT {
+            self.metric_history.remove(0);
+        }
+    }
+
+    fn reset_metric_history(&mut self) {
+        self.metric_history.clear();
+        self.record_metric_history();
+    }
+
+    fn refresh_lenia_inspection(&mut self) {
+        if let Some(inspection) = self.inspected_lenia {
+            self.inspected_lenia = Some(self.lenia.inspect_point(inspection.x, inspection.y));
+        }
+    }
+
+    fn lenia_phase(&self) -> LeniaPhase {
+        let metrics = self.lenia.metrics();
+        let reference_mass = self
+            .metric_history
+            .len()
+            .checked_sub(2)
+            .and_then(|idx| self.metric_history.get(idx))
+            .or_else(|| self.metric_history.last())
+            .map(|sample| sample.mass)
+            .unwrap_or(metrics.mass);
+        let mass_trend = metrics.mass - reference_mass;
+        LeniaPhase::from_metrics(metrics, mass_trend)
+    }
+
     fn reset_active(&mut self) {
         self.step_count = 0;
         match self.mode {
@@ -279,6 +434,9 @@ impl PeterMathApp {
             SimMode::ReactionDiffusion => self.reaction.reset_preset("mitosis"),
             SimMode::GameOfLife => self.life.reset_preset("symmetric_seed"),
         }
+        self.texture = None;
+        self.refresh_lenia_inspection();
+        self.reset_metric_history();
     }
 
     fn step_active(&mut self) {
@@ -442,6 +600,8 @@ impl PeterMathApp {
         self.random_density = snapshot.random_density;
         self.texture = None;
         self.sync_gpu_lenia_from_cpu();
+        self.refresh_lenia_inspection();
+        self.reset_metric_history();
     }
 
     fn undo_lenia(&mut self) {
@@ -480,6 +640,8 @@ impl PeterMathApp {
         self.step_count = 0;
         self.texture = None;
         self.sync_gpu_lenia_from_cpu();
+        self.refresh_lenia_inspection();
+        self.reset_metric_history();
         self.status = format!("Loaded Lenia preset: {}.", preset.label());
     }
 
@@ -495,6 +657,8 @@ impl PeterMathApp {
         self.step_count = 0;
         self.texture = None;
         self.sync_gpu_lenia_from_cpu();
+        self.refresh_lenia_inspection();
+        self.reset_metric_history();
         self.status = format!("Grid profile changed to {}.", profile.label());
     }
 
@@ -509,6 +673,8 @@ impl PeterMathApp {
         self.step_count = 0;
         self.texture = None;
         self.sync_gpu_lenia_from_cpu();
+        self.refresh_lenia_inspection();
+        self.reset_metric_history();
         self.status = format!(
             "Randomized Lenia field with density {:.2} and seed {seed}.",
             self.random_density
@@ -533,6 +699,8 @@ impl PeterMathApp {
         } else {
             self.step_active();
         }
+        self.refresh_lenia_inspection();
+        self.record_metric_history();
     }
 
     fn change_brush_radius(&mut self, delta: f32) {
@@ -611,6 +779,8 @@ impl PeterMathApp {
         self.step_count = 0;
         self.texture = None;
         self.sync_gpu_lenia_from_cpu();
+        self.refresh_lenia_inspection();
+        self.reset_metric_history();
         self.status = "Cleared the Lenia field; draw or choose New seed to continue.".to_owned();
     }
 
@@ -626,6 +796,8 @@ impl PeterMathApp {
         self.step_count = 0;
         self.texture = None;
         self.sync_gpu_lenia_from_cpu();
+        self.refresh_lenia_inspection();
+        self.reset_metric_history();
         self.status = format!("Loaded deterministic Lenia seed {next_seed}.");
     }
 
@@ -683,6 +855,111 @@ impl PeterMathApp {
             InteractionTool::Pan => {}
         }
         self.sync_gpu_lenia_from_cpu();
+        self.refresh_lenia_inspection();
+        self.record_metric_history();
+    }
+
+    fn update_lenia_inspection_from_canvas(&mut self, rect: egui::Rect, response: &egui::Response) {
+        if self.mode != SimMode::Lenia {
+            return;
+        }
+        let Some(pos) = response
+            .hover_pos()
+            .or_else(|| response.interact_pointer_pos())
+        else {
+            return;
+        };
+        if !rect.contains(pos) {
+            return;
+        }
+        let (w, h) = self.lenia.size();
+        let x = ((pos.x - rect.min.x) / rect.width() * w as f32).clamp(0.0, w as f32 - 1.0);
+        let y = ((pos.y - rect.min.y) / rect.height() * h as f32).clamp(0.0, h as f32 - 1.0);
+        self.inspected_lenia = Some(self.lenia.inspect_point(x as usize, y as usize));
+    }
+
+    fn draw_lenia_inspection_overlay(&self, painter: &egui::Painter, rect: egui::Rect) {
+        if self.mode != SimMode::Lenia || !(self.show_kernel_overlay || self.judge_mode) {
+            return;
+        }
+        let Some(inspection) = self.inspected_lenia else {
+            return;
+        };
+        let (w, h) = self.lenia.size();
+        let center = egui::pos2(
+            rect.min.x + (inspection.x as f32 + 0.5) / w as f32 * rect.width(),
+            rect.min.y + (inspection.y as f32 + 0.5) / h as f32 * rect.height(),
+        );
+        let radius = self.lenia.radius as f32 / w as f32 * rect.width();
+        let stroke = egui::Stroke::new(1.2, Color32::from_rgba_unmultiplied(120, 238, 224, 170));
+        painter.circle_stroke(center, radius, stroke);
+        painter.circle_filled(center, 3.0, Color32::from_rgb(255, 118, 168));
+        painter.line_segment(
+            [
+                egui::pos2(center.x - 8.0, center.y),
+                egui::pos2(center.x + 8.0, center.y),
+            ],
+            egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 118, 168, 150)),
+        );
+        painter.line_segment(
+            [
+                egui::pos2(center.x, center.y - 8.0),
+                egui::pos2(center.x, center.y + 8.0),
+            ],
+            egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 118, 168, 150)),
+        );
+    }
+
+    fn lenia_inspection_json(&self) -> serde_json::Value {
+        let Some(inspection) = self.inspected_lenia else {
+            return serde_json::Value::Null;
+        };
+        json!({
+            "x": inspection.x,
+            "y": inspection.y,
+            "field_value": inspection.value,
+            "previous_value": inspection.previous,
+            "delta": inspection.delta,
+            "gradient": inspection.gradient,
+            "kernel_convolution": inspection.convolution,
+            "growth_response": inspection.growth,
+            "estimated_next": inspection.estimated_next,
+        })
+    }
+
+    fn metric_history_summary_json(&self) -> serde_json::Value {
+        let Some(latest) = self.metric_history.last() else {
+            return serde_json::Value::Null;
+        };
+
+        let mut min_mass = f32::INFINITY;
+        let mut max_mass = f32::NEG_INFINITY;
+        let mut min_entropy = f32::INFINITY;
+        let mut max_entropy = f32::NEG_INFINITY;
+        let mut min_stability = f32::INFINITY;
+        let mut max_stability = f32::NEG_INFINITY;
+        let mut min_vitality = f32::INFINITY;
+        let mut max_vitality = f32::NEG_INFINITY;
+
+        for sample in &self.metric_history {
+            min_mass = min_mass.min(sample.mass);
+            max_mass = max_mass.max(sample.mass);
+            min_entropy = min_entropy.min(sample.entropy);
+            max_entropy = max_entropy.max(sample.entropy);
+            min_stability = min_stability.min(sample.stability);
+            max_stability = max_stability.max(sample.stability);
+            min_vitality = min_vitality.min(sample.vitality);
+            max_vitality = max_vitality.max(sample.vitality);
+        }
+
+        json!({
+            "samples": self.metric_history.len(),
+            "latest_step": latest.step_count,
+            "mass": {"latest": latest.mass, "min": min_mass, "max": max_mass},
+            "entropy": {"latest": latest.entropy, "min": min_entropy, "max": max_entropy},
+            "stability": {"latest": latest.stability, "min": min_stability, "max": max_stability},
+            "vitality": {"latest": latest.vitality, "min": min_vitality, "max": max_vitality},
+        })
     }
 
     fn parameter_json(&self) -> serde_json::Value {
@@ -701,6 +978,9 @@ impl PeterMathApp {
                 "brush_strength": self.brush_strength,
                 "random_density": self.random_density,
                 "grid_profile": self.grid_profile.label(),
+                "phase_label": self.lenia_phase().label(),
+                "inspected_point": self.lenia_inspection_json(),
+                "metric_history": self.metric_history_summary_json(),
                 "source_grid": {
                     "width": self.lenia.size().0,
                     "height": self.lenia.size().1,
@@ -726,17 +1006,25 @@ impl PeterMathApp {
         ui.small("Beauty is generated by fields, kernels, diffusion, and deterministic seeds.");
         ui.separator();
 
+        let mut selected_mode = self.mode;
         egui::ComboBox::from_label("System")
-            .selected_text(self.mode.label())
+            .selected_text(selected_mode.label())
             .show_ui(ui, |ui| {
-                ui.selectable_value(&mut self.mode, SimMode::Lenia, "Lenia-like field");
+                ui.selectable_value(&mut selected_mode, SimMode::Lenia, "Lenia-like field");
                 ui.selectable_value(
-                    &mut self.mode,
+                    &mut selected_mode,
                     SimMode::ReactionDiffusion,
                     "Reaction-Diffusion",
                 );
-                ui.selectable_value(&mut self.mode, SimMode::GameOfLife, "Game of Life");
+                ui.selectable_value(&mut selected_mode, SimMode::GameOfLife, "Game of Life");
             });
+        if selected_mode != self.mode {
+            self.mode = selected_mode;
+            self.step_count = 0;
+            self.texture = None;
+            self.reset_metric_history();
+            self.refresh_lenia_inspection();
+        }
 
         egui::ComboBox::from_label("View")
             .selected_text(self.render_style.label())
@@ -807,6 +1095,7 @@ impl PeterMathApp {
                         self.load_lenia_preset(selected);
                     }
                 });
+            ui.small(self.active_preset.description());
 
             egui::ComboBox::from_label("Stamp")
                 .selected_text(self.active_stamp.label())
@@ -815,6 +1104,7 @@ impl PeterMathApp {
                         ui.selectable_value(&mut self.active_stamp, stamp, stamp.label());
                     }
                 });
+            ui.small(self.active_stamp.description());
 
             ui.add(egui::Slider::new(&mut self.brush_radius, 1.0..=32.0).text("brush radius"));
             ui.add(egui::Slider::new(&mut self.brush_strength, 0.05..=1.0).text("brush strength"));
@@ -883,6 +1173,11 @@ impl PeterMathApp {
         ui.label(format!("Seed: {}", self.active_seed()));
         ui.label(format!("Step: {}", self.step_count));
         ui.label(format!("Frame: {}", self.mode_statement()));
+        if self.mode == SimMode::Lenia {
+            let phase = self.lenia_phase();
+            ui.label(format!("Phase: {}", phase.label()));
+            ui.small(phase.description());
+        }
         let m = self.active_metrics();
         ui.label(format!("Active pixels: {}", m.active));
         ui.label(format!("Mass {:.3} · Entropy {:.3}", m.mass, m.entropy));
@@ -924,10 +1219,13 @@ impl PeterMathApp {
                 lenia_changed |= ui
                     .add(egui::Slider::new(&mut self.lenia.decay, 0.0..=0.04).text("damping"))
                     .changed();
-                ui.label("Rule: a continuous field grows according to a weighted neighborhood kernel and a bell-shaped growth curve.");
+                ui.checkbox(&mut self.show_kernel_overlay, "Kernel overlay")
+                    .on_hover_text("Shows the inspected neighborhood radius on the artwork.");
                 if lenia_changed {
                     self.sync_gpu_lenia_from_cpu();
                     self.step_count = 0;
+                    self.refresh_lenia_inspection();
+                    self.reset_metric_history();
                 }
             }
             SimMode::ReactionDiffusion => {
@@ -967,20 +1265,162 @@ impl PeterMathApp {
         metric_bar(ui, "stability", m.stability);
         metric_bar(ui, "vitality", m.vitality);
         ui.label(format!("active cells/pixels: {}", m.active));
+        if self.mode == SimMode::Lenia {
+            let phase = self.lenia_phase();
+            ui.label(format!("phase: {}", phase.label()));
+            ui.small(phase.description());
+            self.draw_metric_history(ui);
+        }
 
         ui.separator();
         ui.heading("Mathematical Frame");
-        ui.label(self.mode_formula());
-        ui.small(self.mode_significance());
+        if self.mode == SimMode::Lenia {
+            self.draw_lenia_mathematical_frame(ui);
+            ui.separator();
+            self.draw_lenia_inspector(ui);
+            ui.separator();
+            self.draw_kernel_lens(ui);
+        } else {
+            ui.label(self.mode_formula());
+            ui.small(self.mode_significance());
+        }
 
         if self.judge_mode {
             ui.separator();
             ui.heading("Judge Mode Guide");
-            ui.label("1. Start with Raw Math View to show the data field.");
-            ui.label("2. Run 100 steps and watch metrics change.");
-            ui.label("3. Change one parameter only.");
-            ui.label("4. Compare the new pattern and export evidence.");
+            if self.mode == SimMode::Lenia {
+                ui.label("1. Raw Math View shows the scalar field.");
+                ui.label("2. Artistic View colors the same data.");
+                ui.label("3. Inspect one point to expose K * u and G(K * u).");
+                ui.label("4. Compare metric history after one parameter change.");
+                ui.label("5. Export PNG + JSON evidence from this state.");
+            } else {
+                ui.label("1. Start with Raw Math View to show the data field.");
+                ui.label("2. Run 100 steps and watch metrics change.");
+                ui.label("3. Change one parameter only.");
+                ui.label("4. Compare the new pattern and export evidence.");
+            }
         }
+    }
+
+    fn draw_lenia_mathematical_frame(&self, ui: &mut egui::Ui) {
+        ui.monospace("u[t]       current scalar field");
+        ui.monospace("K * u      weighted neighborhood");
+        ui.monospace("G(K * u)   bell-shaped growth response");
+        ui.monospace("damping    decay applied to existing mass");
+        ui.monospace("u[t+1]     clamp(u[t] + dt * G - damping * u[t])");
+        ui.small(self.mode_significance());
+    }
+
+    fn draw_lenia_inspector(&self, ui: &mut egui::Ui) {
+        ui.heading("Field Inspector");
+        let Some(inspection) = self.inspected_lenia else {
+            ui.small("Hover the field to inspect local Lenia math.");
+            return;
+        };
+        ui.label(format!("point: {}, {}", inspection.x, inspection.y));
+        ui.label(format!(
+            "u[t] {:.4} · previous {:.4}",
+            inspection.value, inspection.previous
+        ));
+        ui.label(format!(
+            "delta {:+.4} · gradient {:.4}",
+            inspection.delta, inspection.gradient
+        ));
+        ui.label(format!(
+            "K * u {:.4} · G {:.4}",
+            inspection.convolution, inspection.growth
+        ));
+        ui.label(format!("estimated u[t+1] {:.4}", inspection.estimated_next));
+    }
+
+    fn draw_kernel_lens(&self, ui: &mut egui::Ui) {
+        ui.heading("Kernel Lens");
+        ui.label(format!(
+            "radius {} · center {:.3} · width {:.3} · damping {:.4}",
+            self.lenia.radius, self.lenia.growth_center, self.lenia.growth_width, self.lenia.decay
+        ));
+
+        let profile = self.lenia.kernel_profile(56);
+        let desired = egui::vec2(ui.available_width(), 54.0);
+        let (rect, _) = ui.allocate_exact_size(desired, egui::Sense::hover());
+        let painter = ui.painter_at(rect);
+        painter.rect_filled(rect, 3.0, Color32::from_rgb(10, 14, 16));
+        painter.line_segment(
+            [
+                egui::pos2(rect.left(), rect.bottom() - 8.0),
+                egui::pos2(rect.right(), rect.bottom() - 8.0),
+            ],
+            egui::Stroke::new(1.0, Color32::from_rgb(42, 58, 62)),
+        );
+
+        let mut points = Vec::with_capacity(profile.len());
+        for (i, value) in profile.iter().enumerate() {
+            let t = if profile.len() > 1 {
+                i as f32 / (profile.len() - 1) as f32
+            } else {
+                0.0
+            };
+            let x = egui::lerp(rect.left()..=rect.right(), t);
+            let y = egui::lerp(
+                (rect.bottom() - 8.0)..=rect.top() + 6.0,
+                value.clamp(0.0, 1.0),
+            );
+            points.push(egui::pos2(x, y));
+        }
+        painter.add(egui::Shape::line(
+            points,
+            egui::Stroke::new(1.6, Color32::from_rgb(108, 232, 218)),
+        ));
+    }
+
+    fn draw_metric_history(&self, ui: &mut egui::Ui) {
+        ui.separator();
+        ui.heading("Metric History");
+        if self.metric_history.len() < 2 {
+            ui.small("Run the field to build a metric trace.");
+            return;
+        }
+        self.metric_history_chart(ui, "mass/activity", Color32::from_rgb(103, 222, 209), |s| {
+            s.mass
+        });
+        self.metric_history_chart(ui, "entropy", Color32::from_rgb(255, 157, 102), |s| {
+            s.entropy
+        });
+        self.metric_history_chart(ui, "stability", Color32::from_rgb(154, 185, 255), |s| {
+            s.stability
+        });
+        self.metric_history_chart(ui, "vitality", Color32::from_rgb(255, 111, 167), |s| {
+            s.vitality
+        });
+    }
+
+    fn metric_history_chart(
+        &self,
+        ui: &mut egui::Ui,
+        label: &str,
+        color: Color32,
+        value: impl Fn(&MetricHistorySample) -> f32,
+    ) {
+        let latest = self.metric_history.last().map(&value).unwrap_or_default();
+        ui.small(format!("{label} {:.3}", latest));
+        let desired = egui::vec2(ui.available_width(), 28.0);
+        let (rect, _) = ui.allocate_exact_size(desired, egui::Sense::hover());
+        let painter = ui.painter_at(rect);
+        painter.rect_filled(rect, 2.0, Color32::from_rgb(8, 12, 14));
+        let count = self.metric_history.len();
+        let mut points = Vec::with_capacity(count);
+        for (i, sample) in self.metric_history.iter().enumerate() {
+            let t = if count > 1 {
+                i as f32 / (count - 1) as f32
+            } else {
+                0.0
+            };
+            let x = egui::lerp(rect.left()..=rect.right(), t);
+            let y = egui::lerp(rect.bottom()..=rect.top(), value(sample).clamp(0.0, 1.0));
+            points.push(egui::pos2(x, y));
+        }
+        painter.add(egui::Shape::line(points, egui::Stroke::new(1.3, color)));
     }
 
     fn mode_statement(&self) -> &'static str {
@@ -1032,6 +1472,8 @@ impl eframe::App for PeterMathApp {
                         self.step_active();
                     }
                 }
+                self.refresh_lenia_inspection();
+                self.record_metric_history();
                 self.last_tick = Instant::now();
                 ctx.request_repaint();
             } else {
@@ -1053,6 +1495,10 @@ impl eframe::App for PeterMathApp {
                 ui.label(format!("seed {}", self.active_seed()));
                 ui.separator();
                 ui.label(format!("step {}", self.step_count));
+                if self.mode == SimMode::Lenia {
+                    ui.separator();
+                    ui.label(self.lenia_phase().label());
+                }
             });
         });
 
@@ -1081,7 +1527,9 @@ impl eframe::App for PeterMathApp {
                             ui.painter()
                                 .add(egui::Shape::Callback(gpu.paint_callback(rect)));
                         }
+                        self.update_lenia_inspection_from_canvas(rect, &response);
                         self.apply_lenia_brush(rect, &response);
+                        self.draw_lenia_inspection_overlay(ui.painter(), rect);
                     });
                 } else {
                     let (w, h) = self.render_active();
@@ -1109,7 +1557,9 @@ impl eframe::App for PeterMathApp {
                                 ),
                                 Color32::WHITE,
                             );
+                            self.update_lenia_inspection_from_canvas(rect, &response);
                             self.apply_lenia_brush(rect, &response);
+                            self.draw_lenia_inspection_overlay(ui.painter(), rect);
                         });
                     }
                 }

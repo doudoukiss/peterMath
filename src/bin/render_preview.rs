@@ -16,6 +16,7 @@ use std::fs;
 
 const PREVIEW_SIZE: usize = 512;
 const JUDGE_GAP: usize = 32;
+const EXPLANATION_PANEL_WIDTH: usize = 300;
 
 fn main() -> anyhow::Result<()> {
     fs::create_dir_all("peterMath_exports/previews")?;
@@ -92,7 +93,8 @@ fn render_judge_reference() -> anyhow::Result<()> {
     let raw = upscale_rgba(&raw, w, h, PREVIEW_SIZE, PREVIEW_SIZE);
     let art = upscale_rgba(&art, w, h, PREVIEW_SIZE, PREVIEW_SIZE);
 
-    let out_w = PREVIEW_SIZE * 2 + gap;
+    let explanation = render_explanation_panel(&sim, EXPLANATION_PANEL_WIDTH, PREVIEW_SIZE);
+    let out_w = PREVIEW_SIZE * 2 + EXPLANATION_PANEL_WIDTH + gap * 2;
     let mut combined = vec![0; out_w * PREVIEW_SIZE * 4];
     blit_rgba(&raw, PREVIEW_SIZE, PREVIEW_SIZE, &mut combined, out_w, 0);
     blit_rgba(
@@ -103,12 +105,125 @@ fn render_judge_reference() -> anyhow::Result<()> {
         out_w,
         PREVIEW_SIZE + gap,
     );
+    blit_rgba(
+        &explanation,
+        EXPLANATION_PANEL_WIDTH,
+        PREVIEW_SIZE,
+        &mut combined,
+        out_w,
+        PREVIEW_SIZE * 2 + gap * 2,
+    );
     export::save_png(
         "peterMath_exports/previews/judge_mode_reference.png",
         out_w,
         PREVIEW_SIZE,
         &combined,
     )
+}
+
+fn render_explanation_panel(sim: &LeniaSim, panel_w: usize, panel_h: usize) -> Vec<u8> {
+    let mut out = vec![0; panel_w * panel_h * 4];
+    fill_rect(&mut out, panel_w, 0, 0, panel_w, panel_h, [8, 12, 14, 255]);
+    fill_rect(
+        &mut out,
+        panel_w,
+        18,
+        24,
+        panel_w - 36,
+        98,
+        [13, 20, 23, 255],
+    );
+    fill_rect(
+        &mut out,
+        panel_w,
+        18,
+        144,
+        panel_w - 36,
+        162,
+        [13, 20, 23, 255],
+    );
+    fill_rect(
+        &mut out,
+        panel_w,
+        18,
+        334,
+        panel_w - 36,
+        142,
+        [13, 20, 23, 255],
+    );
+
+    let profile = sim.kernel_profile(64);
+    draw_profile(
+        &mut out,
+        panel_w,
+        (36, 44, panel_w - 72, 58),
+        &profile,
+        [100, 232, 218, 255],
+    );
+
+    let metrics = sim.metrics();
+    let bars = [
+        (metrics.mass, [100, 232, 218, 255]),
+        (metrics.entropy, [255, 157, 102, 255]),
+        (metrics.stability, [154, 185, 255, 255]),
+        (metrics.vitality, [255, 111, 167, 255]),
+    ];
+    for (row, (value, color)) in bars.iter().enumerate() {
+        let y = 166 + row * 32;
+        fill_rect(
+            &mut out,
+            panel_w,
+            36,
+            y,
+            panel_w - 72,
+            10,
+            [32, 44, 48, 255],
+        );
+        fill_rect(
+            &mut out,
+            panel_w,
+            36,
+            y,
+            ((panel_w - 72) as f32 * value.clamp(0.0, 1.0)) as usize,
+            10,
+            *color,
+        );
+    }
+
+    let (w, h) = sim.size();
+    let inspection = sim.inspect_point(w / 2, h / 2);
+    let signals = [
+        inspection.value,
+        inspection.delta.abs().min(1.0),
+        inspection.gradient.min(1.0),
+        inspection.convolution.clamp(0.0, 1.0),
+        ((inspection.growth + 1.0) * 0.5).clamp(0.0, 1.0),
+        inspection.estimated_next,
+    ];
+    for (i, value) in signals.iter().enumerate() {
+        let x = 36 + i * 38;
+        let height = (96.0 * value.clamp(0.0, 1.0)) as usize;
+        fill_rect(
+            &mut out,
+            panel_w,
+            x,
+            436 - height,
+            22,
+            height,
+            [255, 118, 168, 255],
+        );
+    }
+    draw_circle(
+        &mut out,
+        panel_w,
+        panel_w / 2,
+        388,
+        28,
+        [100, 232, 218, 255],
+    );
+    draw_circle(&mut out, panel_w, panel_w / 2, 388, 4, [255, 118, 168, 255]);
+
+    out
 }
 
 fn upscale_rgba(
@@ -166,4 +281,123 @@ fn blit_rgba(
         target[target_start..target_start + source_w * 4]
             .copy_from_slice(&source[source_start..source_start + source_w * 4]);
     }
+}
+
+fn fill_rect(
+    target: &mut [u8],
+    target_w: usize,
+    x: usize,
+    y: usize,
+    w: usize,
+    h: usize,
+    color: [u8; 4],
+) {
+    let target_h = target.len() / target_w / 4;
+    let x_end = (x + w).min(target_w);
+    let y_end = (y + h).min(target_h);
+    for yy in y..y_end {
+        for xx in x..x_end {
+            put_pixel(target, target_w, xx as i32, yy as i32, color);
+        }
+    }
+}
+
+fn draw_profile(
+    target: &mut [u8],
+    target_w: usize,
+    rect: (usize, usize, usize, usize),
+    values: &[f32],
+    color: [u8; 4],
+) {
+    if values.len() < 2 {
+        return;
+    }
+    let (x, y, w, h) = rect;
+    let mut last = None;
+    for (i, value) in values.iter().enumerate() {
+        let tx = i as f32 / (values.len() - 1) as f32;
+        let px = x as f32 + tx * w as f32;
+        let py = y as f32 + (1.0 - value.clamp(0.0, 1.0)) * h as f32;
+        let point = (px.round() as i32, py.round() as i32);
+        if let Some(previous) = last {
+            draw_line(target, target_w, previous, point, color);
+        }
+        last = Some(point);
+    }
+}
+
+fn draw_circle(
+    target: &mut [u8],
+    target_w: usize,
+    cx: usize,
+    cy: usize,
+    radius: usize,
+    color: [u8; 4],
+) {
+    if radius <= 5 {
+        for y in cy.saturating_sub(radius)..=cy + radius {
+            for x in cx.saturating_sub(radius)..=cx + radius {
+                let dx = x as isize - cx as isize;
+                let dy = y as isize - cy as isize;
+                if dx * dx + dy * dy <= (radius * radius) as isize {
+                    put_pixel(target, target_w, x as i32, y as i32, color);
+                }
+            }
+        }
+        return;
+    }
+
+    let steps = 160;
+    let mut previous = None;
+    for i in 0..=steps {
+        let a = i as f32 / steps as f32 * std::f32::consts::TAU;
+        let point = (
+            cx as i32 + (radius as f32 * a.cos()).round() as i32,
+            cy as i32 + (radius as f32 * a.sin()).round() as i32,
+        );
+        if let Some(previous) = previous {
+            draw_line(target, target_w, previous, point, color);
+        }
+        previous = Some(point);
+    }
+}
+
+fn draw_line(target: &mut [u8], target_w: usize, from: (i32, i32), to: (i32, i32), color: [u8; 4]) {
+    let (mut x0, mut y0) = from;
+    let (x1, y1) = to;
+    let dx = (x1 - x0).abs();
+    let sx = if x0 < x1 { 1 } else { -1 };
+    let dy = -(y1 - y0).abs();
+    let sy = if y0 < y1 { 1 } else { -1 };
+    let mut err = dx + dy;
+
+    loop {
+        put_pixel(target, target_w, x0, y0, color);
+        if x0 == x1 && y0 == y1 {
+            break;
+        }
+        let e2 = 2 * err;
+        if e2 >= dy {
+            err += dy;
+            x0 += sx;
+        }
+        if e2 <= dx {
+            err += dx;
+            y0 += sy;
+        }
+    }
+}
+
+fn put_pixel(target: &mut [u8], target_w: usize, x: i32, y: i32, color: [u8; 4]) {
+    if x < 0 || y < 0 {
+        return;
+    }
+    let x = x as usize;
+    let y = y as usize;
+    let target_h = target.len() / target_w / 4;
+    if x >= target_w || y >= target_h {
+        return;
+    }
+    let i = (y * target_w + x) * 4;
+    target[i..i + 4].copy_from_slice(&color);
 }

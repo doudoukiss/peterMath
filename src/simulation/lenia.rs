@@ -16,6 +16,19 @@ pub struct LeniaState {
     pub seed: u64,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LeniaInspection {
+    pub x: usize,
+    pub y: usize,
+    pub value: f32,
+    pub previous: f32,
+    pub delta: f32,
+    pub gradient: f32,
+    pub convolution: f32,
+    pub growth: f32,
+    pub estimated_next: f32,
+}
+
 pub struct LeniaSim {
     w: usize,
     h: usize,
@@ -66,6 +79,26 @@ impl LeniaSim {
 
     pub fn kernel_entries(&self) -> &[(isize, isize, f32)] {
         &self.kernel
+    }
+
+    pub fn kernel_profile(&self, samples: usize) -> Vec<f32> {
+        let samples = samples.max(2);
+        let mut profile = Vec::with_capacity(samples);
+        let mut max_weight = 0.0_f32;
+        for i in 0..samples {
+            let d = i as f32 / (samples - 1) as f32;
+            let ring = (-(d - 0.55).powi(2) / 0.10).exp();
+            let hollow = 1.0 - (-(d).powi(2) / 0.05).exp() * 0.35;
+            let weight = ring * hollow;
+            max_weight = max_weight.max(weight);
+            profile.push(weight);
+        }
+        if max_weight > 0.0 {
+            for value in &mut profile {
+                *value /= max_weight;
+            }
+        }
+        profile
     }
 
     pub fn snapshot(&self) -> LeniaState {
@@ -352,12 +385,8 @@ impl LeniaSim {
         self.previous.copy_from_slice(&self.field);
         for y in 0..self.h {
             for x in 0..self.w {
-                let mut neighborhood = 0.0;
-                for &(dx, dy, weight) in &self.kernel {
-                    let idx = wrap_index(x as isize + dx, y as isize + dy, self.w, self.h);
-                    neighborhood += self.field[idx] * weight;
-                }
-                let growth = self.growth(neighborhood);
+                let neighborhood = self.convolution_at(x, y);
+                let growth = self.growth_response(neighborhood);
                 let idx = y * self.w + x;
                 let value = self.field[idx] + self.dt * growth - self.decay * self.field[idx];
                 self.next[idx] = value.clamp(0.0, 1.0);
@@ -366,9 +395,48 @@ impl LeniaSim {
         std::mem::swap(&mut self.field, &mut self.next);
     }
 
-    fn growth(&self, x: f32) -> f32 {
+    pub fn convolution_at(&self, x: usize, y: usize) -> f32 {
+        let x = x.min(self.w.saturating_sub(1));
+        let y = y.min(self.h.saturating_sub(1));
+        let mut neighborhood = 0.0;
+        for &(dx, dy, weight) in &self.kernel {
+            let idx = wrap_index(x as isize + dx, y as isize + dy, self.w, self.h);
+            neighborhood += self.field[idx] * weight;
+        }
+        neighborhood
+    }
+
+    pub fn growth_response(&self, x: f32) -> f32 {
         let sigma2 = 2.0 * self.growth_width * self.growth_width;
         2.0 * (-(x - self.growth_center).powi(2) / sigma2).exp() - 1.0
+    }
+
+    pub fn inspect_point(&self, x: usize, y: usize) -> LeniaInspection {
+        let x = x.min(self.w.saturating_sub(1));
+        let y = y.min(self.h.saturating_sub(1));
+        let idx = y * self.w + x;
+        let value = self.field[idx];
+        let previous = self.previous[idx];
+        let gx = self.field[wrap_index(x as isize + 1, y as isize, self.w, self.h)]
+            - self.field[wrap_index(x as isize - 1, y as isize, self.w, self.h)];
+        let gy = self.field[wrap_index(x as isize, y as isize + 1, self.w, self.h)]
+            - self.field[wrap_index(x as isize, y as isize - 1, self.w, self.h)];
+        let gradient = (gx * gx + gy * gy).sqrt();
+        let convolution = self.convolution_at(x, y);
+        let growth = self.growth_response(convolution);
+        let estimated_next = (value + self.dt * growth - self.decay * value).clamp(0.0, 1.0);
+
+        LeniaInspection {
+            x,
+            y,
+            value,
+            previous,
+            delta: value - previous,
+            gradient,
+            convolution,
+            growth,
+            estimated_next,
+        }
     }
 
     pub fn render_rgba(&self, style: RenderStyle, out: &mut [u8]) {
