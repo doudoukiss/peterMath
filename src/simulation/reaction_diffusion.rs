@@ -35,7 +35,7 @@ impl ReactionDiffusionSim {
             dt: 1.0,
             seed,
         };
-        sim.reset_preset("labyrinth");
+        sim.reset_preset("mitosis");
         sim
     }
 
@@ -45,33 +45,6 @@ impl ReactionDiffusionSim {
 
     pub fn field(&self) -> &[f32] {
         &self.b
-    }
-
-    pub fn paint_brush(&mut self, x: f32, y: f32, radius: f32, strength: f32, inject_b: bool) {
-        let radius = radius.max(1.0);
-        let strength = strength.clamp(0.0, 1.0);
-        let r = radius.ceil() as isize;
-        let cx = x.round() as isize;
-        let cy = y.round() as isize;
-        for dy in -r..=r {
-            for dx in -r..=r {
-                let dist = ((dx * dx + dy * dy) as f32).sqrt();
-                if dist > radius {
-                    continue;
-                }
-                let falloff = 1.0 - dist / radius;
-                let amount = strength * falloff;
-                let idx = wrap_index(cx + dx, cy + dy, self.w, self.h);
-                if inject_b {
-                    self.b[idx] = (self.b[idx] + amount).clamp(0.0, 1.0);
-                    self.a[idx] = (self.a[idx] - amount * 0.85).clamp(0.0, 1.0);
-                } else {
-                    self.b[idx] = (self.b[idx] * (1.0 - amount)).clamp(0.0, 1.0);
-                    self.a[idx] = (self.a[idx] + amount * 0.55).clamp(0.0, 1.0);
-                }
-            }
-        }
-        self.previous_b.copy_from_slice(&self.b);
     }
 
     pub fn reset_preset(&mut self, preset: &str) {
@@ -85,23 +58,12 @@ impl ReactionDiffusionSim {
                 self.seed_dots(9, 7.0);
             }
             "labyrinth" => {
-                self.feed = 0.030;
-                self.kill = 0.055;
-                self.seed_dots_full(150, 4.8);
-            }
-            "spots" => {
-                self.feed = 0.022;
-                self.kill = 0.051;
-                self.seed_dots_full(80, 3.8);
-            }
-            "waves" => {
-                self.feed = 0.014;
-                self.kill = 0.047;
-                self.seed_dots_full(54, 5.8);
+                self.feed = 0.029;
+                self.kill = 0.057;
+                self.seed_dots_full(96, 4.2);
             }
             _ => self.seed_dots(11, 6.5),
         }
-        self.previous_b.copy_from_slice(&self.b);
     }
 
     fn seed_dots(&mut self, count: usize, radius: f32) {
@@ -198,34 +160,5 @@ impl ReactionDiffusionSim {
 
     pub fn metrics(&self) -> Metrics {
         Metrics::from_scalar_grid(&self.b, Some(&self.previous_b), self.w, self.h)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_labyrinth_changes_over_time() {
-        let mut sim = ReactionDiffusionSim::new(96, 96, 2001);
-        let initial = sim.metrics();
-        let mut checkpoints = Vec::new();
-        for step in 1..=900 {
-            sim.step();
-            if matches!(step, 50 | 300 | 900) {
-                checkpoints.push(sim.metrics());
-            }
-        }
-
-        assert_eq!(checkpoints.len(), 3);
-        for metrics in checkpoints {
-            let delta = (metrics.mass - initial.mass).abs()
-                + (metrics.entropy - initial.entropy).abs()
-                + (metrics.active as f32 - initial.active as f32).abs() / 10_000.0;
-            assert!(
-                delta > 0.002,
-                "reaction-diffusion checkpoint did not visibly diverge: {delta}"
-            );
-        }
     }
 }
