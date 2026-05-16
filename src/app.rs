@@ -1,8 +1,9 @@
+use crate::analysis::{self, ActiveRegionAnalysis, PopulationPhaseAnalysis};
 use crate::export;
 use crate::gpu::{self, GpuLeniaArt, GpuLeniaParams};
 use crate::metrics::Metrics;
 use crate::simulation::lenia::{LeniaInspection, LeniaSim, LeniaState};
-use crate::simulation::life::{LifeRlePattern, LifeSim};
+use crate::simulation::life::{LifeRlePattern, LifeSim, LifeStateHash, PatternDetectionReport};
 use crate::simulation::reaction_diffusion::ReactionDiffusionSim;
 use crate::simulation::{RenderStyle, SimMode};
 use egui::{Color32, ColorImage, TextureHandle, TextureOptions};
@@ -51,6 +52,17 @@ pub struct PeterMathApp {
     texture: Option<TextureHandle>,
     life_rle_input: String,
     life_rle_output: String,
+    active_region_history: Vec<(f32, f32)>,
+    life_hash_history: Vec<(u64, LifeStateHash)>,
+    last_glider_centroid: Option<(f32, f32)>,
+    show_active_region_overlay: bool,
+    comparison_baseline: Option<LeniaState>,
+    comparison_parameter: VariantParameter,
+    comparison_value: f32,
+    comparison_steps: usize,
+    comparison_result: Option<RuleVariantComparison>,
+    comparison_baseline_texture: Option<TextureHandle>,
+    comparison_variant_texture: Option<TextureHandle>,
     status: String,
     last_tick: Instant,
 }
@@ -116,6 +128,26 @@ enum LeniaPhase {
     Turbulent,
     Dense,
     Fading,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum VariantParameter {
+    KernelRadius,
+    GrowthCenter,
+    GrowthWidth,
+    Damping,
+}
+
+struct RuleVariantComparison {
+    parameter: VariantParameter,
+    value: f32,
+    steps: usize,
+    baseline_metrics: Metrics,
+    variant_metrics: Metrics,
+    width: usize,
+    height: usize,
+    baseline_pixels: Vec<u8>,
+    variant_pixels: Vec<u8>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -329,6 +361,60 @@ impl LeniaPhase {
     }
 }
 
+impl VariantParameter {
+    const ALL: [Self; 4] = [
+        Self::KernelRadius,
+        Self::GrowthCenter,
+        Self::GrowthWidth,
+        Self::Damping,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::KernelRadius => "kernel radius",
+            Self::GrowthCenter => "growth center",
+            Self::GrowthWidth => "growth width",
+            Self::Damping => "damping",
+        }
+    }
+
+    fn id(self) -> &'static str {
+        match self {
+            Self::KernelRadius => "kernel_radius",
+            Self::GrowthCenter => "growth_center",
+            Self::GrowthWidth => "growth_width",
+            Self::Damping => "damping",
+        }
+    }
+
+    fn current_value(self, lenia: &LeniaSim) -> f32 {
+        match self {
+            Self::KernelRadius => lenia.radius as f32,
+            Self::GrowthCenter => lenia.growth_center,
+            Self::GrowthWidth => lenia.growth_width,
+            Self::Damping => lenia.decay,
+        }
+    }
+
+    fn range(self) -> std::ops::RangeInclusive<f32> {
+        match self {
+            Self::KernelRadius => 3.0..=32.0,
+            Self::GrowthCenter => 0.05..=0.95,
+            Self::GrowthWidth => 0.005..=0.18,
+            Self::Damping => 0.0..=0.04,
+        }
+    }
+
+    fn apply(self, lenia: &mut LeniaSim, value: f32) {
+        match self {
+            Self::KernelRadius => lenia.set_radius(value.round() as usize),
+            Self::GrowthCenter => lenia.growth_center = value,
+            Self::GrowthWidth => lenia.growth_width = value,
+            Self::Damping => lenia.decay = value,
+        }
+    }
+}
+
 impl PerformanceStats {
     fn record_frame_delta(&mut self, delta: Duration) {
         let frame_ms = duration_ms(delta);
@@ -413,6 +499,17 @@ impl PeterMathApp {
             texture: None,
             life_rle_input: "x = 3, y = 3, rule = B3/S23\nbob$2bo$3o!\n".to_owned(),
             life_rle_output: String::new(),
+            active_region_history: Vec::new(),
+            life_hash_history: Vec::new(),
+            last_glider_centroid: None,
+            show_active_region_overlay: false,
+            comparison_baseline: None,
+            comparison_parameter: VariantParameter::GrowthCenter,
+            comparison_value: 0.36,
+            comparison_steps: 80,
+            comparison_result: None,
+            comparison_baseline_texture: None,
+            comparison_variant_texture: None,
             status: if gpu_ready {
                 "GPU Lenia is active. Tune one rule and watch form, motion, and metrics agree."
                     .to_owned()
@@ -457,6 +554,7 @@ impl PeterMathApp {
         if let Some(last) = self.metric_history.last_mut() {
             if last.step_count == sample.step_count {
                 *last = sample;
+                self.record_interpretability_history();
                 return;
             }
         }
@@ -464,10 +562,14 @@ impl PeterMathApp {
         if self.metric_history.len() > METRIC_HISTORY_LIMIT {
             self.metric_history.remove(0);
         }
+        self.record_interpretability_history();
     }
 
     fn reset_metric_history(&mut self) {
         self.metric_history.clear();
+        self.active_region_history.clear();
+        self.life_hash_history.clear();
+        self.last_glider_centroid = None;
         self.record_metric_history();
     }
 
@@ -489,6 +591,108 @@ impl PeterMathApp {
             .unwrap_or(metrics.mass);
         let mass_trend = metrics.mass - reference_mass;
         LeniaPhase::from_metrics(metrics, mass_trend)
+    }
+
+    fn previous_centroid(&self) -> Option<(f32, f32)> {
+        self.active_region_history.last().copied()
+    }
+
+    fn active_region(&self) -> ActiveRegionAnalysis {
+        match self.mode {
+            SimMode::Lenia => analysis::active_region_from_scalar_grid(
+                self.lenia.field(),
+                self.lenia.size().0,
+                self.lenia.size().1,
+                0.08,
+                self.previous_centroid(),
+            ),
+            SimMode::ReactionDiffusion => analysis::active_region_from_scalar_grid(
+                self.reaction.field(),
+                self.reaction.size().0,
+                self.reaction.size().1,
+                0.08,
+                self.previous_centroid(),
+            ),
+            SimMode::GameOfLife => {
+                let (w, h) = self.life.size();
+                analysis::active_region_from_points(
+                    w,
+                    h,
+                    self.life.live_points().into_iter(),
+                    self.previous_centroid(),
+                )
+            }
+        }
+    }
+
+    fn population_phase_analysis(&self) -> PopulationPhaseAnalysis {
+        let current = self.active_metrics();
+        let previous = self
+            .metric_history
+            .iter()
+            .rev()
+            .nth(1)
+            .map(|sample| Metrics {
+                mass: sample.mass,
+                entropy: sample.entropy,
+                symmetry: current.symmetry,
+                stability: sample.stability,
+                vitality: sample.vitality,
+                active: current.active,
+            });
+        let label = match self.mode {
+            SimMode::Lenia => self.lenia_phase().label(),
+            SimMode::ReactionDiffusion => {
+                let mass_trend = previous
+                    .map(|previous| current.mass - previous.mass)
+                    .unwrap_or_default();
+                LeniaPhase::from_metrics(current, mass_trend).label()
+            }
+            SimMode::GameOfLife => "discrete",
+        };
+        analysis::population_phase_analysis(label, current, previous, self.active_region())
+    }
+
+    fn life_pattern_report(&self) -> PatternDetectionReport {
+        self.life.detect_known_patterns(
+            &self.life_hash_history,
+            self.step_count,
+            self.last_glider_centroid,
+        )
+    }
+
+    fn record_interpretability_history(&mut self) {
+        if let Some(centroid) = self.active_region().centroid {
+            if self
+                .active_region_history
+                .last()
+                .map(|last| {
+                    (last.0 - centroid.0).abs() > 0.001 || (last.1 - centroid.1).abs() > 0.001
+                })
+                .unwrap_or(true)
+            {
+                self.active_region_history.push(centroid);
+                if self.active_region_history.len() > 64 {
+                    self.active_region_history.remove(0);
+                }
+            }
+        }
+
+        if self.mode == SimMode::GameOfLife {
+            let report = self.life_pattern_report();
+            self.last_glider_centroid = report.glider_track.and_then(|track| track.centroid);
+            let hash = self.life.state_hash();
+            if let Some(last) = self.life_hash_history.last_mut() {
+                if last.0 == self.step_count {
+                    *last = (self.step_count, hash);
+                    return;
+                }
+            }
+            self.life_hash_history.push((self.step_count, hash));
+            if self.life_hash_history.len() > 64 {
+                self.life_hash_history.remove(0);
+            }
+        }
     }
 
     fn reset_active(&mut self) {
@@ -1012,6 +1216,68 @@ impl PeterMathApp {
         self.status = "Exported current Game of Life active bounding box as RLE.".to_owned();
     }
 
+    fn capture_comparison_baseline(&mut self) {
+        self.comparison_baseline = Some(self.lenia.snapshot());
+        self.comparison_value = self.comparison_parameter.current_value(&self.lenia);
+        self.comparison_result = None;
+        self.comparison_baseline_texture = None;
+        self.comparison_variant_texture = None;
+        self.status = "Captured Lenia baseline for rule variant comparison.".to_owned();
+    }
+
+    fn apply_variant_to_current_lenia(&mut self) {
+        self.push_lenia_history();
+        self.comparison_parameter
+            .apply(&mut self.lenia, self.comparison_value);
+        self.step_count = 0;
+        self.mark_cpu_texture_dirty();
+        self.sync_gpu_lenia_from_cpu();
+        self.refresh_lenia_inspection();
+        self.reset_metric_history();
+        self.status = format!(
+            "Applied Lenia variant: {} = {:.4}.",
+            self.comparison_parameter.label(),
+            self.comparison_value
+        );
+    }
+
+    fn run_rule_variant_comparison(&mut self) {
+        let Some(baseline_state) = &self.comparison_baseline else {
+            self.status = "Capture a Lenia baseline before running comparison.".to_owned();
+            return;
+        };
+
+        let mut baseline = LeniaSim::from_state(baseline_state);
+        let mut variant = LeniaSim::from_state(baseline_state);
+        self.comparison_parameter
+            .apply(&mut variant, self.comparison_value);
+        for _ in 0..self.comparison_steps {
+            baseline.step();
+            variant.step();
+        }
+        let baseline_metrics = baseline.metrics();
+        let variant_metrics = variant.metrics();
+        let (w, h) = baseline.size();
+        let mut baseline_pixels = vec![0; w * h * 4];
+        let mut variant_pixels = vec![0; w * h * 4];
+        baseline.render_rgba(RenderStyle::Artistic, &mut baseline_pixels);
+        variant.render_rgba(RenderStyle::Artistic, &mut variant_pixels);
+        self.comparison_result = Some(RuleVariantComparison {
+            parameter: self.comparison_parameter,
+            value: self.comparison_value,
+            steps: self.comparison_steps,
+            baseline_metrics,
+            variant_metrics,
+            width: w,
+            height: h,
+            baseline_pixels,
+            variant_pixels,
+        });
+        self.comparison_baseline_texture = None;
+        self.comparison_variant_texture = None;
+        self.status = "Ran CPU Lenia rule variant comparison.".to_owned();
+    }
+
     fn apply_lenia_brush(&mut self, rect: egui::Rect, response: &egui::Response) {
         if self.mode != SimMode::Lenia {
             return;
@@ -1122,6 +1388,40 @@ impl PeterMathApp {
         );
     }
 
+    fn draw_active_region_overlay(&self, painter: &egui::Painter, rect: egui::Rect) {
+        if !(self.show_active_region_overlay || self.judge_mode) {
+            return;
+        }
+        let region = self.active_region();
+        let Some((min_x, min_y, max_x, max_y)) = region.bounds else {
+            return;
+        };
+        let (w, h) = match self.mode {
+            SimMode::Lenia => self.lenia.size(),
+            SimMode::ReactionDiffusion => self.reaction.size(),
+            SimMode::GameOfLife => self.life.size(),
+        };
+        let left = rect.min.x + min_x as f32 / w as f32 * rect.width();
+        let right = rect.min.x + (max_x + 1) as f32 / w as f32 * rect.width();
+        let top = rect.min.y + min_y as f32 / h as f32 * rect.height();
+        let bottom = rect.min.y + (max_y + 1) as f32 / h as f32 * rect.height();
+        let bounds_rect =
+            egui::Rect::from_min_max(egui::pos2(left, top), egui::pos2(right, bottom));
+        painter.rect_stroke(
+            bounds_rect,
+            0.0,
+            egui::Stroke::new(1.2, Color32::from_rgba_unmultiplied(216, 240, 139, 170)),
+            egui::StrokeKind::Outside,
+        );
+        if let Some((cx, cy)) = region.centroid {
+            let center = egui::pos2(
+                rect.min.x + (cx + 0.5) / w as f32 * rect.width(),
+                rect.min.y + (cy + 0.5) / h as f32 * rect.height(),
+            );
+            painter.circle_filled(center, 3.2, Color32::from_rgb(216, 240, 139));
+        }
+    }
+
     fn lenia_inspection_json(&self) -> serde_json::Value {
         let Some(inspection) = self.inspected_lenia else {
             return serde_json::Value::Null;
@@ -1193,6 +1493,73 @@ impl PeterMathApp {
         })
     }
 
+    fn active_region_json(&self) -> serde_json::Value {
+        let region = self.active_region();
+        json!({
+            "active_count": region.active_count,
+            "bounds": region.bounds.map(|(min_x, min_y, max_x, max_y)| {
+                json!({"min_x": min_x, "min_y": min_y, "max_x": max_x, "max_y": max_y})
+            }),
+            "centroid": region.centroid.map(|(x, y)| json!({"x": x, "y": y})),
+            "area_ratio": region.area_ratio,
+            "drift": {"x": region.drift.0, "y": region.drift.1},
+        })
+    }
+
+    fn population_phase_json(&self) -> serde_json::Value {
+        let phase = self.population_phase_analysis();
+        json!({
+            "label": phase.label,
+            "mass_trend": phase.mass_trend,
+            "entropy_trend": phase.entropy_trend,
+            "stability_trend": phase.stability_trend,
+            "vitality_trend": phase.vitality_trend,
+            "centroid_drift": {"x": phase.centroid_drift.0, "y": phase.centroid_drift.1},
+        })
+    }
+
+    fn pattern_detection_json(&self) -> serde_json::Value {
+        if self.mode != SimMode::GameOfLife {
+            return serde_json::Value::Null;
+        }
+        let report = self.life_pattern_report();
+        json!({
+            "oscillator_period": report.oscillator_period,
+            "detections": report.detections.iter().map(|detection| json!({
+                "pattern": detection.pattern.label(),
+                "kind": detection.pattern.kind(),
+                "x": detection.x,
+                "y": detection.y,
+                "width": detection.width,
+                "height": detection.height,
+            })).collect::<Vec<_>>(),
+            "glider_track": report.glider_track.map(|track| json!({
+                "count": track.count,
+                "centroid": track.centroid.map(|(x, y)| json!({"x": x, "y": y})),
+                "direction": track.direction.map(|(x, y)| json!({"x": x, "y": y})),
+            })),
+        })
+    }
+
+    fn comparison_json(&self) -> serde_json::Value {
+        let Some(comparison) = &self.comparison_result else {
+            return serde_json::Value::Null;
+        };
+        json!({
+            "parameter": comparison.parameter.id(),
+            "value": comparison.value,
+            "steps": comparison.steps,
+            "baseline": metrics_json(comparison.baseline_metrics),
+            "variant": metrics_json(comparison.variant_metrics),
+            "delta": {
+                "mass": comparison.variant_metrics.mass - comparison.baseline_metrics.mass,
+                "entropy": comparison.variant_metrics.entropy - comparison.baseline_metrics.entropy,
+                "stability": comparison.variant_metrics.stability - comparison.baseline_metrics.stability,
+                "vitality": comparison.variant_metrics.vitality - comparison.baseline_metrics.vitality,
+            },
+        })
+    }
+
     fn parameter_json(&self) -> serde_json::Value {
         match self.mode {
             SimMode::Lenia => json!({
@@ -1214,6 +1581,9 @@ impl PeterMathApp {
                 "inspected_point": self.lenia_inspection_json(),
                 "metric_history": self.metric_history_summary_json(),
                 "performance": self.performance_json(),
+                "active_region": self.active_region_json(),
+                "phase_analysis": self.population_phase_json(),
+                "rule_variant_comparison": self.comparison_json(),
                 "source_grid": {
                     "width": self.lenia.size().0,
                     "height": self.lenia.size().1,
@@ -1227,6 +1597,8 @@ impl PeterMathApp {
                 "diffusion_b": self.reaction.diff_b,
                 "time_step": self.reaction.dt,
                 "performance": self.performance_json(),
+                "active_region": self.active_region_json(),
+                "phase_analysis": self.population_phase_json(),
             }),
             SimMode::GameOfLife => json!({
                 "schema_version": export::SCHEMA_VERSION,
@@ -1234,6 +1606,9 @@ impl PeterMathApp {
                 "seed_density": self.life.random_density,
                 "rle_export": self.life.export_rle(),
                 "performance": self.performance_json(),
+                "active_region": self.active_region_json(),
+                "phase_analysis": self.population_phase_json(),
+                "pattern_detection": self.pattern_detection_json(),
             }),
         }
     }
@@ -1287,6 +1662,11 @@ impl PeterMathApp {
 
         ui.checkbox(&mut self.judge_mode, "Judge Mode");
         ui.checkbox(&mut self.dev_diagnostics, "Dev diagnostics");
+        ui.checkbox(
+            &mut self.show_active_region_overlay,
+            "Active region overlay",
+        )
+        .on_hover_text("Shows the automatically detected active bounds and centroid.");
         if self.gpu_lenia.is_some() {
             let previous = self.prefer_gpu_lenia;
             ui.checkbox(&mut self.prefer_gpu_lenia, "GPU high-quality Lenia");
@@ -1557,6 +1937,9 @@ impl PeterMathApp {
             self.draw_metric_history(ui);
         }
 
+        ui.separator();
+        self.draw_interpretability_panel(ui);
+
         if self.judge_mode || self.dev_diagnostics {
             ui.separator();
             self.draw_performance_diagnostics(ui);
@@ -1591,6 +1974,167 @@ impl PeterMathApp {
                 ui.label("4. Compare the new pattern and export evidence.");
             }
         }
+    }
+
+    fn draw_interpretability_panel(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Interpretability");
+        let region = self.active_region();
+        if let Some((min_x, min_y, max_x, max_y)) = region.bounds {
+            ui.label(format!(
+                "active bounds: ({min_x}, {min_y}) to ({max_x}, {max_y})"
+            ));
+        } else {
+            ui.label("active bounds: none");
+        }
+        if let Some((x, y)) = region.centroid {
+            ui.label(format!(
+                "centroid {:.1}, {:.1} · drift {:+.2}, {:+.2}",
+                x, y, region.drift.0, region.drift.1
+            ));
+        }
+        ui.label(format!("active area ratio {:.3}", region.area_ratio));
+        let phase = self.population_phase_analysis();
+        ui.small(format!(
+            "phase {} · mass {:+.3} · entropy {:+.3} · vitality {:+.3}",
+            phase.label, phase.mass_trend, phase.entropy_trend, phase.vitality_trend
+        ));
+
+        match self.mode {
+            SimMode::GameOfLife => self.draw_life_pattern_report(ui),
+            SimMode::Lenia => self.draw_rule_variant_explorer(ui),
+            _ => {}
+        }
+    }
+
+    fn draw_life_pattern_report(&self, ui: &mut egui::Ui) {
+        let report = self.life_pattern_report();
+        ui.separator();
+        ui.heading("Pattern Detection");
+        if report.detections.is_empty() {
+            ui.small("No known still life, oscillator, or glider detected.");
+        } else {
+            for detection in &report.detections {
+                ui.label(format!(
+                    "{} ({}) at {}, {}",
+                    detection.pattern.label(),
+                    detection.pattern.kind(),
+                    detection.x,
+                    detection.y
+                ));
+            }
+        }
+        if let Some(period) = report.oscillator_period {
+            ui.label(format!("oscillator period: {period}"));
+        }
+        if let Some(track) = report.glider_track {
+            ui.label(format!("gliders tracked: {}", track.count));
+            if let Some((dx, dy)) = track.direction {
+                ui.small(format!("direction {:+.2}, {:+.2}", dx, dy));
+            }
+        }
+    }
+
+    fn draw_rule_variant_explorer(&mut self, ui: &mut egui::Ui) {
+        ui.separator();
+        ui.heading("Rule Variant Explorer");
+        ui.horizontal(|ui| {
+            if ui.button("Capture baseline").clicked() {
+                self.capture_comparison_baseline();
+            }
+            if ui.button("Run comparison").clicked() {
+                self.run_rule_variant_comparison();
+            }
+        });
+        egui::ComboBox::from_label("Variant parameter")
+            .selected_text(self.comparison_parameter.label())
+            .show_ui(ui, |ui| {
+                let mut selected = self.comparison_parameter;
+                for parameter in VariantParameter::ALL {
+                    ui.selectable_value(&mut selected, parameter, parameter.label());
+                }
+                if selected != self.comparison_parameter {
+                    self.comparison_parameter = selected;
+                    self.comparison_value = selected.current_value(&self.lenia);
+                }
+            });
+        ui.add(
+            egui::Slider::new(
+                &mut self.comparison_value,
+                self.comparison_parameter.range(),
+            )
+            .text(self.comparison_parameter.label()),
+        );
+        ui.add(egui::Slider::new(&mut self.comparison_steps, 8..=240).text("comparison steps"));
+        if ui.button("Apply variant to current").clicked() {
+            self.apply_variant_to_current_lenia();
+        }
+
+        if self.comparison_baseline.is_some() {
+            ui.small("Baseline captured from the current Lenia field.");
+        }
+        if self.comparison_result.is_some() {
+            self.draw_rule_variant_result(ui);
+        }
+    }
+
+    fn draw_rule_variant_result(&mut self, ui: &mut egui::Ui) {
+        let Some(result) = &self.comparison_result else {
+            return;
+        };
+        ui.separator();
+        ui.label(format!(
+            "{} = {:.4} · {} steps",
+            result.parameter.label(),
+            result.value,
+            result.steps
+        ));
+        ui.label(format!(
+            "Δ mass {:+.3} · Δ entropy {:+.3}",
+            result.variant_metrics.mass - result.baseline_metrics.mass,
+            result.variant_metrics.entropy - result.baseline_metrics.entropy
+        ));
+        ui.label(format!(
+            "Δ stability {:+.3} · Δ vitality {:+.3}",
+            result.variant_metrics.stability - result.baseline_metrics.stability,
+            result.variant_metrics.vitality - result.baseline_metrics.vitality
+        ));
+
+        let baseline_image = ColorImage::from_rgba_unmultiplied(
+            [result.width, result.height],
+            &result.baseline_pixels,
+        );
+        let variant_image = ColorImage::from_rgba_unmultiplied(
+            [result.width, result.height],
+            &result.variant_pixels,
+        );
+        if self.comparison_baseline_texture.is_none() {
+            self.comparison_baseline_texture = Some(ui.ctx().load_texture(
+                "peterMath-comparison-baseline",
+                baseline_image,
+                TextureOptions::LINEAR,
+            ));
+        }
+        if self.comparison_variant_texture.is_none() {
+            self.comparison_variant_texture = Some(ui.ctx().load_texture(
+                "peterMath-comparison-variant",
+                variant_image,
+                TextureOptions::LINEAR,
+            ));
+        }
+        ui.horizontal(|ui| {
+            if let Some(texture) = &self.comparison_baseline_texture {
+                ui.vertical(|ui| {
+                    ui.small("baseline");
+                    ui.add(egui::Image::new((texture.id(), egui::vec2(112.0, 112.0))));
+                });
+            }
+            if let Some(texture) = &self.comparison_variant_texture {
+                ui.vertical(|ui| {
+                    ui.small("variant");
+                    ui.add(egui::Image::new((texture.id(), egui::vec2(112.0, 112.0))));
+                });
+            }
+        });
     }
 
     fn draw_performance_diagnostics(&self, ui: &mut egui::Ui) {
@@ -1877,6 +2421,7 @@ impl eframe::App for PeterMathApp {
                         self.update_lenia_inspection_from_canvas(rect, &response);
                         self.apply_lenia_brush(rect, &response);
                         self.draw_lenia_inspection_overlay(ui.painter(), rect);
+                        self.draw_active_region_overlay(ui.painter(), rect);
                     });
                     render_duration += render_start.elapsed();
                 } else {
@@ -1913,6 +2458,7 @@ impl eframe::App for PeterMathApp {
                             self.update_lenia_inspection_from_canvas(rect, &response);
                             self.apply_lenia_brush(rect, &response);
                             self.draw_lenia_inspection_overlay(ui.painter(), rect);
+                            self.draw_active_region_overlay(ui.painter(), rect);
                         });
                     }
                 }
@@ -1962,6 +2508,17 @@ fn metric_bar(ui: &mut egui::Ui, label: &str, value: f32) {
         ui.label(label);
         ui.add(egui::ProgressBar::new(value.clamp(0.0, 1.0)).show_percentage());
     });
+}
+
+fn metrics_json(metrics: Metrics) -> serde_json::Value {
+    json!({
+        "mass": metrics.mass,
+        "entropy": metrics.entropy,
+        "symmetry": metrics.symmetry,
+        "stability": metrics.stability,
+        "vitality": metrics.vitality,
+        "active": metrics.active,
+    })
 }
 
 fn duration_ms(duration: Duration) -> f32 {

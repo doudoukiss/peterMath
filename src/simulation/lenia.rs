@@ -65,6 +65,12 @@ impl LeniaSim {
         sim
     }
 
+    pub fn from_state(state: &LeniaState) -> Self {
+        let mut sim = Self::new(state.w, state.h, state.seed);
+        sim.restore(state);
+        sim
+    }
+
     pub fn size(&self) -> (usize, usize) {
         (self.w, self.h)
     }
@@ -467,5 +473,40 @@ impl LeniaSim {
 
     pub fn metrics(&self) -> Metrics {
         Metrics::from_scalar_grid(&self.field, Some(&self.previous), self.w, self.h)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rule_variant_produces_metric_delta_from_same_baseline() {
+        let mut source = LeniaSim::new(96, 96, 2001);
+        for _ in 0..8 {
+            source.step();
+        }
+
+        let snapshot = source.snapshot();
+        let mut baseline = LeniaSim::from_state(&snapshot);
+        let mut variant = LeniaSim::from_state(&snapshot);
+        variant.growth_center = (variant.growth_center + 0.055).clamp(0.05, 0.95);
+
+        for _ in 0..32 {
+            baseline.step();
+            variant.step();
+        }
+
+        let base = baseline.metrics();
+        let changed = variant.metrics();
+        let delta = (changed.mass - base.mass).abs()
+            + (changed.entropy - base.entropy).abs()
+            + (changed.stability - base.stability).abs()
+            + (changed.vitality - base.vitality).abs();
+
+        assert!(
+            delta > 0.001,
+            "expected variant metrics to diverge, got delta {delta}"
+        );
     }
 }

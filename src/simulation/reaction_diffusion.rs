@@ -43,6 +43,10 @@ impl ReactionDiffusionSim {
         (self.w, self.h)
     }
 
+    pub fn field(&self) -> &[f32] {
+        &self.b
+    }
+
     pub fn reset_preset(&mut self, preset: &str) {
         self.a.fill(1.0);
         self.b.fill(0.0);

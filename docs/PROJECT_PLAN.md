@@ -33,6 +33,7 @@ The judging story is native-first. The app should persuade through mathematical 
 - Secondary systems: Reaction-Diffusion and Game of Life.
 - Interaction: draw, erase, stamps, presets, density randomization, undo/redo, keyboard shortcuts.
 - Explanation: field inspector, kernel lens, phase labels, metric history, Judge Mode guide.
+- Advanced interpretability: active-region analysis, population phase trends, Game of Life pattern detection, glider tracking, oscillator periods, and Lenia rule variant comparison.
 - Performance: diagnostics, bounded scheduler, CPU texture dirty tracking, `perf_probe`.
 - Shareability: PNG/JSON snapshot export, share-state JSON, evidence packs, Game of Life RLE import/export, and offline web fallback.
 
@@ -61,4 +62,5 @@ Do not add features that weaken the judging story. Every visible feature should 
 - The same seed and parameters reproduce the same result.
 - Raw and Artistic views share the same data.
 - Metrics and exports provide evidence.
+- Active-region, pattern, and rule-variant tools make emergence legible.
 - If the executable fails on a judge machine, the static web fallback still demonstrates rule-driven pattern formation.

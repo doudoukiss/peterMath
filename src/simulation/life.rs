@@ -1,6 +1,66 @@
 use crate::metrics::Metrics;
 use crate::palette;
 use crate::simulation::{wrap_index, RenderStyle};
+use std::collections::{HashSet, VecDeque};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum KnownPattern {
+    Block,
+    Beehive,
+    Loaf,
+    Blinker,
+    Toad,
+    Beacon,
+    Glider,
+}
+
+#[derive(Debug, Clone)]
+pub struct PatternDetection {
+    pub pattern: KnownPattern,
+    pub x: usize,
+    pub y: usize,
+    pub width: usize,
+    pub height: usize,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct PatternDetectionReport {
+    pub detections: Vec<PatternDetection>,
+    pub oscillator_period: Option<u64>,
+    pub glider_track: Option<GliderTrack>,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GliderTrack {
+    pub count: usize,
+    pub centroid: Option<(f32, f32)>,
+    pub direction: Option<(f32, f32)>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LifeStateHash(pub u64);
+
+impl KnownPattern {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Block => "block",
+            Self::Beehive => "beehive",
+            Self::Loaf => "loaf",
+            Self::Blinker => "blinker",
+            Self::Toad => "toad",
+            Self::Beacon => "beacon",
+            Self::Glider => "glider",
+        }
+    }
+
+    pub fn kind(self) -> &'static str {
+        match self {
+            Self::Block | Self::Beehive | Self::Loaf => "still life",
+            Self::Blinker | Self::Toad | Self::Beacon => "oscillator",
+            Self::Glider => "spaceship",
+        }
+    }
+}
 
 pub struct LifeRlePattern {
     pub width: usize,
@@ -203,6 +263,18 @@ impl LifeSim {
         self.cells.get(y * self.w + x)
     }
 
+    pub fn live_points(&self) -> Vec<(usize, usize)> {
+        let mut points = Vec::new();
+        for y in 0..self.h {
+            for x in 0..self.w {
+                if self.get_cell(x, y) {
+                    points.push((x, y));
+                }
+            }
+        }
+        points
+    }
+
     pub fn set_cell(&mut self, x: usize, y: usize, alive: bool) {
         if x >= self.w || y >= self.h {
             return;
@@ -254,6 +326,115 @@ impl LifeSim {
         body.push('!');
 
         format!("x = {width}, y = {height}, rule = B3/S23\n{body}\n")
+    }
+
+    pub fn state_hash(&self) -> LifeStateHash {
+        let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+        for i in 0..self.cells.len() {
+            if self.cells.get(i) {
+                hash ^= i as u64;
+                hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+            }
+        }
+        LifeStateHash(hash)
+    }
+
+    pub fn detect_known_patterns(
+        &self,
+        hash_history: &[(u64, LifeStateHash)],
+        step_count: u64,
+        previous_glider_centroid: Option<(f32, f32)>,
+    ) -> PatternDetectionReport {
+        let detections = self.detect_components();
+        let glider_detections: Vec<&PatternDetection> = detections
+            .iter()
+            .filter(|detection| detection.pattern == KnownPattern::Glider)
+            .collect();
+        let glider_track = if glider_detections.is_empty() {
+            None
+        } else {
+            let mut sum_x = 0.0;
+            let mut sum_y = 0.0;
+            for detection in &glider_detections {
+                sum_x += detection.x as f32 + detection.width as f32 * 0.5;
+                sum_y += detection.y as f32 + detection.height as f32 * 0.5;
+            }
+            let centroid = (
+                sum_x / glider_detections.len() as f32,
+                sum_y / glider_detections.len() as f32,
+            );
+            let direction = previous_glider_centroid
+                .map(|previous| (centroid.0 - previous.0, centroid.1 - previous.1));
+            Some(GliderTrack {
+                count: glider_detections.len(),
+                centroid: Some(centroid),
+                direction,
+            })
+        };
+
+        PatternDetectionReport {
+            detections,
+            oscillator_period: detect_oscillator_period(
+                hash_history,
+                step_count,
+                self.state_hash(),
+            ),
+            glider_track,
+        }
+    }
+
+    fn detect_components(&self) -> Vec<PatternDetection> {
+        let mut visited = vec![false; self.w * self.h];
+        let mut detections = Vec::new();
+        for y in 0..self.h {
+            for x in 0..self.w {
+                let idx = y * self.w + x;
+                if visited[idx] || !self.get_cell(x, y) {
+                    continue;
+                }
+                let component = self.collect_component(x, y, &mut visited);
+                if let Some(detection) = classify_component(&component) {
+                    detections.push(detection);
+                }
+            }
+        }
+        detections
+    }
+
+    fn collect_component(
+        &self,
+        start_x: usize,
+        start_y: usize,
+        visited: &mut [bool],
+    ) -> Vec<(usize, usize)> {
+        let mut queue = VecDeque::new();
+        let mut component = Vec::new();
+        queue.push_back((start_x, start_y));
+        visited[start_y * self.w + start_x] = true;
+
+        while let Some((x, y)) = queue.pop_front() {
+            component.push((x, y));
+            for dy in -1..=1 {
+                for dx in -1..=1 {
+                    if dx == 0 && dy == 0 {
+                        continue;
+                    }
+                    let nx = x as isize + dx;
+                    let ny = y as isize + dy;
+                    if nx < 0 || ny < 0 || nx >= self.w as isize || ny >= self.h as isize {
+                        continue;
+                    }
+                    let nx = nx as usize;
+                    let ny = ny as usize;
+                    let idx = ny * self.w + nx;
+                    if !visited[idx] && self.get_cell(nx, ny) {
+                        visited[idx] = true;
+                        queue.push_back((nx, ny));
+                    }
+                }
+            }
+        }
+        component
     }
 
     fn live_bounds(&self) -> Option<(usize, usize, usize, usize)> {
@@ -373,6 +554,126 @@ fn append_rle_run(out: &mut String, ch: Option<char>, count: usize) {
     out.push(ch);
 }
 
+pub fn detect_oscillator_period(
+    hash_history: &[(u64, LifeStateHash)],
+    step_count: u64,
+    current_hash: LifeStateHash,
+) -> Option<u64> {
+    hash_history
+        .iter()
+        .rev()
+        .find_map(|&(step, hash)| {
+            (hash == current_hash && step_count > step).then_some(step_count - step)
+        })
+        .filter(|period| *period <= 32)
+}
+
+fn classify_component(component: &[(usize, usize)]) -> Option<PatternDetection> {
+    if component.is_empty() || component.len() > 12 {
+        return None;
+    }
+    let min_x = component.iter().map(|point| point.0).min()?;
+    let min_y = component.iter().map(|point| point.1).min()?;
+    let max_x = component.iter().map(|point| point.0).max()?;
+    let max_y = component.iter().map(|point| point.1).max()?;
+    let normalized: Vec<(i32, i32)> = component
+        .iter()
+        .map(|&(x, y)| ((x - min_x) as i32, (y - min_y) as i32))
+        .collect();
+    let pattern = known_patterns()
+        .iter()
+        .find_map(|(pattern, cells)| pattern_matches(&normalized, cells).then_some(*pattern))?;
+    Some(PatternDetection {
+        pattern,
+        x: min_x,
+        y: min_y,
+        width: max_x - min_x + 1,
+        height: max_y - min_y + 1,
+    })
+}
+
+fn pattern_matches(component: &[(i32, i32)], pattern: &[(i32, i32)]) -> bool {
+    if component.len() != pattern.len() {
+        return false;
+    }
+    let component = normalized_set(component);
+    pattern_variants(pattern)
+        .iter()
+        .any(|variant| normalized_set(variant) == component)
+}
+
+fn normalized_set(points: &[(i32, i32)]) -> Vec<(i32, i32)> {
+    let min_x = points.iter().map(|point| point.0).min().unwrap_or_default();
+    let min_y = points.iter().map(|point| point.1).min().unwrap_or_default();
+    let mut out: Vec<_> = points
+        .iter()
+        .map(|&(x, y)| (x - min_x, y - min_y))
+        .collect();
+    out.sort_unstable();
+    out
+}
+
+fn pattern_variants(points: &[(i32, i32)]) -> Vec<Vec<(i32, i32)>> {
+    let mut variants = Vec::new();
+    let mut seen = HashSet::new();
+    for transform in 0..8 {
+        let variant: Vec<_> = points
+            .iter()
+            .map(|&(x, y)| match transform {
+                0 => (x, y),
+                1 => (x, -y),
+                2 => (-x, y),
+                3 => (-x, -y),
+                4 => (y, x),
+                5 => (y, -x),
+                6 => (-y, x),
+                _ => (-y, -x),
+            })
+            .collect();
+        let normalized = normalized_set(&variant);
+        if seen.insert(normalized.clone()) {
+            variants.push(normalized);
+        }
+    }
+    variants
+}
+
+fn known_patterns() -> &'static [(KnownPattern, &'static [(i32, i32)])] {
+    &[
+        (KnownPattern::Block, &[(0, 0), (1, 0), (0, 1), (1, 1)]),
+        (
+            KnownPattern::Beehive,
+            &[(1, 0), (2, 0), (0, 1), (3, 1), (1, 2), (2, 2)],
+        ),
+        (
+            KnownPattern::Loaf,
+            &[(1, 0), (2, 0), (0, 1), (3, 1), (1, 2), (3, 2), (2, 3)],
+        ),
+        (KnownPattern::Blinker, &[(0, 0), (1, 0), (2, 0)]),
+        (
+            KnownPattern::Toad,
+            &[(1, 0), (2, 0), (3, 0), (0, 1), (1, 1), (2, 1)],
+        ),
+        (
+            KnownPattern::Beacon,
+            &[
+                (0, 0),
+                (1, 0),
+                (0, 1),
+                (1, 1),
+                (2, 2),
+                (3, 2),
+                (2, 3),
+                (3, 3),
+            ],
+        ),
+        (
+            KnownPattern::Glider,
+            &[(1, 0), (2, 1), (0, 2), (1, 2), (2, 2)],
+        ),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -396,5 +697,70 @@ mod tests {
         let rle = sim.export_rle();
         assert!(rle.starts_with("x = 3, y = 1, rule = B3/S23"));
         assert!(rle.contains("3o!"));
+    }
+
+    #[test]
+    fn detects_still_life_patterns() {
+        assert_detects("x = 2, y = 2\n2o$2o!", KnownPattern::Block);
+        assert_detects("x = 4, y = 3\nb2o$o2bo$b2o!", KnownPattern::Beehive);
+        assert_detects("x = 4, y = 4\nb2o$o2bo$bobo$2bo!", KnownPattern::Loaf);
+    }
+
+    #[test]
+    fn detects_oscillator_patterns() {
+        assert_detects("x = 3, y = 1\n3o!", KnownPattern::Blinker);
+        assert_detects("x = 4, y = 2\nb3o$3ob!", KnownPattern::Toad);
+        assert_detects("x = 4, y = 4\n2o2b$2o2b$2b2o$2b2o!", KnownPattern::Beacon);
+    }
+
+    #[test]
+    fn detects_glider_and_direction() {
+        let mut sim = sim_from_rle("x = 3, y = 3\nbob$2bo$3o!");
+        let report = sim.detect_known_patterns(&[], 0, Some((9.0, 9.0)));
+        assert!(report
+            .detections
+            .iter()
+            .any(|detection| detection.pattern == KnownPattern::Glider));
+        let track = report.glider_track.expect("glider track");
+        assert_eq!(track.count, 1);
+        assert!(track.direction.is_some());
+
+        sim.step();
+        sim.step();
+        sim.step();
+        sim.step();
+        let history = vec![(0, LifeStateHash(1))];
+        let moved = sim.detect_known_patterns(&history, 4, track.centroid);
+        assert!(moved.glider_track.and_then(|t| t.direction).is_some());
+    }
+
+    #[test]
+    fn detects_oscillator_period_from_hash_history() {
+        let mut sim = sim_from_rle("x = 3, y = 1\n3o!");
+        let initial = sim.state_hash();
+        sim.step();
+        sim.step();
+        let period = detect_oscillator_period(&[(0, initial)], 2, sim.state_hash());
+        assert_eq!(period, Some(2));
+    }
+
+    fn assert_detects(rle: &str, expected: KnownPattern) {
+        let sim = sim_from_rle(rle);
+        let report = sim.detect_known_patterns(&[], 0, None);
+        assert!(
+            report
+                .detections
+                .iter()
+                .any(|detection| detection.pattern == expected),
+            "expected {expected:?}, got {:?}",
+            report.detections
+        );
+    }
+
+    fn sim_from_rle(rle: &str) -> LifeSim {
+        let pattern = LifeRlePattern::parse(rle).expect("valid RLE");
+        let mut sim = LifeSim::new(24, 24, 1);
+        sim.apply_rle_centered(&pattern);
+        sim
     }
 }
