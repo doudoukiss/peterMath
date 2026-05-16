@@ -278,6 +278,13 @@ impl GpuLeniaArt {
         }
     }
 
+    pub fn pending_steps(&self) -> u32 {
+        self.shared
+            .lock()
+            .map(|shared| shared.pending_steps)
+            .unwrap_or_default()
+    }
+
     pub fn update_params(&self, params: GpuLeniaParams, render_style: RenderStyle) {
         if let Ok(mut shared) = self.shared.lock() {
             shared.params_value = params;

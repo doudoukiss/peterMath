@@ -2,11 +2,64 @@ use crate::metrics::Metrics;
 use crate::palette;
 use crate::simulation::{wrap_index, RenderStyle};
 
+pub struct BitGrid {
+    len: usize,
+    words: Vec<u64>,
+}
+
+impl BitGrid {
+    pub fn new(len: usize) -> Self {
+        Self {
+            len,
+            words: vec![0; len.div_ceil(64)],
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn fill(&mut self, value: bool) {
+        let fill = if value { u64::MAX } else { 0 };
+        self.words.fill(fill);
+        if value {
+            self.clear_unused_tail_bits();
+        }
+    }
+
+    pub fn get(&self, idx: usize) -> bool {
+        debug_assert!(idx < self.len);
+        let word = self.words[idx / 64];
+        (word & (1_u64 << (idx % 64))) != 0
+    }
+
+    pub fn set(&mut self, idx: usize, value: bool) {
+        debug_assert!(idx < self.len);
+        let mask = 1_u64 << (idx % 64);
+        let word = &mut self.words[idx / 64];
+        if value {
+            *word |= mask;
+        } else {
+            *word &= !mask;
+        }
+    }
+
+    fn clear_unused_tail_bits(&mut self) {
+        let used_bits = self.len % 64;
+        if used_bits == 0 {
+            return;
+        }
+        if let Some(last) = self.words.last_mut() {
+            *last &= (1_u64 << used_bits) - 1;
+        }
+    }
+}
+
 pub struct LifeSim {
     w: usize,
     h: usize,
-    cells: Vec<bool>,
-    next: Vec<bool>,
+    cells: BitGrid,
+    next: BitGrid,
     age: Vec<f32>,
     previous_age: Vec<f32>,
     pub random_density: f32,
@@ -18,8 +71,8 @@ impl LifeSim {
         let mut sim = Self {
             w,
             h,
-            cells: vec![false; w * h],
-            next: vec![false; w * h],
+            cells: BitGrid::new(w * h),
+            next: BitGrid::new(w * h),
             age: vec![0.0; w * h],
             previous_age: vec![0.0; w * h],
             random_density: 0.18,
@@ -35,6 +88,7 @@ impl LifeSim {
 
     pub fn reset_preset(&mut self, preset: &str) {
         self.cells.fill(false);
+        self.next.fill(false);
         self.age.fill(0.0);
         match preset {
             "symmetric_seed" => self.seed_symmetric(),
@@ -44,11 +98,11 @@ impl LifeSim {
 
     pub fn reset_random(&mut self) {
         let mut rng = fastrand::Rng::with_seed(self.seed + 17);
-        for cell in &mut self.cells {
-            *cell = rng.f32() < self.random_density;
+        for i in 0..self.cells.len() {
+            self.cells.set(i, rng.f32() < self.random_density);
         }
         for (i, age) in self.age.iter_mut().enumerate() {
-            *age = if self.cells[i] { 1.0 } else { 0.0 };
+            *age = if self.cells.get(i) { 1.0 } else { 0.0 };
         }
     }
 
@@ -72,7 +126,7 @@ impl LifeSim {
                 let x = cx as isize + dx * sx;
                 let y = cy as isize + dy;
                 let idx = wrap_index(x, y, self.w, self.h);
-                self.cells[idx] = true;
+                self.cells.set(idx, true);
                 self.age[idx] = 1.0;
             }
         }
@@ -84,13 +138,16 @@ impl LifeSim {
             for x in 0..self.w {
                 let idx = y * self.w + x;
                 let n = self.neighbor_count(x, y);
-                let alive = self.cells[idx];
-                self.next[idx] = matches!((alive, n), (true, 2) | (true, 3) | (false, 3));
+                let alive = self.cells.get(idx);
+                self.next.set(
+                    idx,
+                    matches!((alive, n), (true, 2) | (true, 3) | (false, 3)),
+                );
             }
         }
         std::mem::swap(&mut self.cells, &mut self.next);
         for i in 0..self.cells.len() {
-            self.age[i] = if self.cells[i] {
+            self.age[i] = if self.cells.get(i) {
                 (self.age[i] + 0.08).clamp(0.0, 1.0)
             } else {
                 (self.age[i] * 0.90).clamp(0.0, 1.0)
@@ -106,7 +163,7 @@ impl LifeSim {
                     continue;
                 }
                 let idx = wrap_index(x as isize + dx, y as isize + dy, self.w, self.h);
-                if self.cells[idx] {
+                if self.cells.get(idx) {
                     count += 1;
                 }
             }
@@ -119,7 +176,7 @@ impl LifeSim {
             let v = self.age[i];
             let rgba = match style {
                 RenderStyle::RawMath => {
-                    if self.cells[i] {
+                    if self.cells.get(i) {
                         [255, 255, 255, 255]
                     } else {
                         [16, 16, 16, 255]

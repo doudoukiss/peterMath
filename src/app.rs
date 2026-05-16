@@ -11,6 +11,10 @@ use std::time::{Duration, Instant};
 
 const HISTORY_LIMIT: usize = 32;
 const METRIC_HISTORY_LIMIT: usize = 180;
+const TARGET_TICK: Duration = Duration::from_millis(66);
+const MAX_FRAME_DELTA: Duration = Duration::from_millis(250);
+const MAX_UPDATE_BATCHES: usize = 3;
+const GPU_CPU_REFERENCE_SYNC_INTERVAL: usize = 4;
 
 pub struct PeterMathApp {
     mode: SimMode,
@@ -35,6 +39,12 @@ pub struct PeterMathApp {
     inspected_lenia: Option<LeniaInspection>,
     show_kernel_overlay: bool,
     metric_history: Vec<MetricHistorySample>,
+    dev_diagnostics: bool,
+    performance: PerformanceStats,
+    cpu_texture_dirty: bool,
+    tick_accumulator: Duration,
+    gpu_cpu_sync_interval: usize,
+    gpu_cpu_sync_counter: usize,
     steps_per_frame: usize,
     step_count: u64,
     pixels: Vec<u8>,
@@ -104,6 +114,25 @@ enum LeniaPhase {
     Turbulent,
     Dense,
     Fading,
+}
+
+#[derive(Clone, Copy, Default)]
+struct FrameTimingSample {
+    frame_ms: f32,
+    update_ms: f32,
+    render_ms: f32,
+    cpu_sync_ms: f32,
+}
+
+#[derive(Default)]
+struct PerformanceStats {
+    latest: FrameTimingSample,
+    fps_estimate: f32,
+    frame_samples: usize,
+    source_grid: (usize, usize),
+    gpu_grid: Option<usize>,
+    pending_steps: u32,
+    cpu_sync_interval: usize,
 }
 
 impl InteractionTool {
@@ -298,6 +327,28 @@ impl LeniaPhase {
     }
 }
 
+impl PerformanceStats {
+    fn record_frame_delta(&mut self, delta: Duration) {
+        let frame_ms = duration_ms(delta);
+        self.latest.frame_ms = frame_ms;
+        if frame_ms > 0.0 {
+            let instant_fps = 1000.0 / frame_ms;
+            self.fps_estimate = if self.frame_samples == 0 {
+                instant_fps
+            } else {
+                self.fps_estimate * 0.88 + instant_fps * 0.12
+            };
+        }
+        self.frame_samples = self.frame_samples.saturating_add(1);
+    }
+
+    fn set_timings(&mut self, update: Duration, render: Duration, cpu_sync: Duration) {
+        self.latest.update_ms = duration_ms(update);
+        self.latest.render_ms = duration_ms(render);
+        self.latest.cpu_sync_ms = duration_ms(cpu_sync);
+    }
+}
+
 impl PeterMathApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         configure_style(&cc.egui_ctx);
@@ -319,6 +370,12 @@ impl PeterMathApp {
             .ok()
         });
         let gpu_ready = gpu_lenia.is_some();
+        let performance = PerformanceStats {
+            source_grid: lenia.size(),
+            gpu_grid: if gpu_ready { Some(512) } else { None },
+            cpu_sync_interval: GPU_CPU_REFERENCE_SYNC_INTERVAL,
+            ..Default::default()
+        };
         Self {
             mode: SimMode::Lenia,
             render_style,
@@ -342,6 +399,12 @@ impl PeterMathApp {
             inspected_lenia,
             show_kernel_overlay: false,
             metric_history,
+            dev_diagnostics: false,
+            performance,
+            cpu_texture_dirty: true,
+            tick_accumulator: Duration::ZERO,
+            gpu_cpu_sync_interval: GPU_CPU_REFERENCE_SYNC_INTERVAL,
+            gpu_cpu_sync_counter: 0,
             steps_per_frame: 1,
             step_count: 0,
             pixels: vec![0; width * width * 4],
@@ -435,6 +498,7 @@ impl PeterMathApp {
             SimMode::GameOfLife => self.life.reset_preset("symmetric_seed"),
         }
         self.texture = None;
+        self.mark_cpu_texture_dirty();
         self.refresh_lenia_inspection();
         self.reset_metric_history();
     }
@@ -446,6 +510,7 @@ impl PeterMathApp {
             SimMode::GameOfLife => self.life.step(),
         }
         self.step_count += 1;
+        self.mark_cpu_texture_dirty();
     }
 
     fn render_active(&mut self) -> (usize, usize) {
@@ -557,6 +622,25 @@ impl PeterMathApp {
         }
     }
 
+    fn mark_cpu_texture_dirty(&mut self) {
+        self.cpu_texture_dirty = true;
+    }
+
+    fn update_performance_metadata(&mut self) {
+        self.performance.source_grid = match self.mode {
+            SimMode::Lenia => self.lenia.size(),
+            SimMode::ReactionDiffusion => self.reaction.size(),
+            SimMode::GameOfLife => self.life.size(),
+        };
+        self.performance.gpu_grid = self.gpu_lenia.as_ref().map(|gpu| gpu.size() as usize);
+        self.performance.pending_steps = self
+            .gpu_lenia
+            .as_ref()
+            .map(|gpu| gpu.pending_steps())
+            .unwrap_or_default();
+        self.performance.cpu_sync_interval = self.gpu_cpu_sync_interval;
+    }
+
     fn sync_gpu_lenia_from_cpu(&self) {
         if let Some(gpu) = &self.gpu_lenia {
             let (w, h) = self.lenia.size();
@@ -599,6 +683,7 @@ impl PeterMathApp {
         self.grid_profile = snapshot.grid_profile;
         self.random_density = snapshot.random_density;
         self.texture = None;
+        self.mark_cpu_texture_dirty();
         self.sync_gpu_lenia_from_cpu();
         self.refresh_lenia_inspection();
         self.reset_metric_history();
@@ -639,6 +724,7 @@ impl PeterMathApp {
         self.lenia.reset_preset(preset.id());
         self.step_count = 0;
         self.texture = None;
+        self.mark_cpu_texture_dirty();
         self.sync_gpu_lenia_from_cpu();
         self.refresh_lenia_inspection();
         self.reset_metric_history();
@@ -656,6 +742,7 @@ impl PeterMathApp {
         self.lenia.reset_preset(self.active_preset.id());
         self.step_count = 0;
         self.texture = None;
+        self.mark_cpu_texture_dirty();
         self.sync_gpu_lenia_from_cpu();
         self.refresh_lenia_inspection();
         self.reset_metric_history();
@@ -672,6 +759,7 @@ impl PeterMathApp {
         self.lenia.randomize_density(seed, self.random_density);
         self.step_count = 0;
         self.texture = None;
+        self.mark_cpu_texture_dirty();
         self.sync_gpu_lenia_from_cpu();
         self.refresh_lenia_inspection();
         self.reset_metric_history();
@@ -685,6 +773,7 @@ impl PeterMathApp {
         self.push_lenia_history();
         self.reset_active();
         self.texture = None;
+        self.mark_cpu_texture_dirty();
         self.status = format!("Reset Lenia preset: {}.", self.active_preset.label());
     }
 
@@ -696,6 +785,7 @@ impl PeterMathApp {
             }
             self.lenia.step();
             self.step_count += 1;
+            self.mark_cpu_texture_dirty();
         } else {
             self.step_active();
         }
@@ -778,6 +868,7 @@ impl PeterMathApp {
         self.lenia.clear();
         self.step_count = 0;
         self.texture = None;
+        self.mark_cpu_texture_dirty();
         self.sync_gpu_lenia_from_cpu();
         self.refresh_lenia_inspection();
         self.reset_metric_history();
@@ -795,6 +886,7 @@ impl PeterMathApp {
         self.lenia.reset_preset(self.active_preset.id());
         self.step_count = 0;
         self.texture = None;
+        self.mark_cpu_texture_dirty();
         self.sync_gpu_lenia_from_cpu();
         self.refresh_lenia_inspection();
         self.reset_metric_history();
@@ -855,6 +947,7 @@ impl PeterMathApp {
             InteractionTool::Pan => {}
         }
         self.sync_gpu_lenia_from_cpu();
+        self.mark_cpu_texture_dirty();
         self.refresh_lenia_inspection();
         self.record_metric_history();
     }
@@ -962,6 +1055,25 @@ impl PeterMathApp {
         })
     }
 
+    fn performance_json(&self) -> serde_json::Value {
+        json!({
+            "fps_estimate": self.performance.fps_estimate,
+            "frame_ms": self.performance.latest.frame_ms,
+            "update_ms": self.performance.latest.update_ms,
+            "render_upload_ms": self.performance.latest.render_ms,
+            "cpu_sync_ms": self.performance.latest.cpu_sync_ms,
+            "backend": self.backend_label(),
+            "source_grid": {
+                "width": self.performance.source_grid.0,
+                "height": self.performance.source_grid.1,
+            },
+            "gpu_grid": self.performance.gpu_grid,
+            "pending_gpu_steps": self.performance.pending_steps,
+            "cpu_sync_interval": self.performance.cpu_sync_interval,
+            "frame_samples": self.performance.frame_samples,
+        })
+    }
+
     fn parameter_json(&self) -> serde_json::Value {
         match self.mode {
             SimMode::Lenia => json!({
@@ -981,6 +1093,7 @@ impl PeterMathApp {
                 "phase_label": self.lenia_phase().label(),
                 "inspected_point": self.lenia_inspection_json(),
                 "metric_history": self.metric_history_summary_json(),
+                "performance": self.performance_json(),
                 "source_grid": {
                     "width": self.lenia.size().0,
                     "height": self.lenia.size().1,
@@ -1022,28 +1135,40 @@ impl PeterMathApp {
             self.mode = selected_mode;
             self.step_count = 0;
             self.texture = None;
+            self.mark_cpu_texture_dirty();
             self.reset_metric_history();
             self.refresh_lenia_inspection();
         }
 
+        let mut selected_render_style = self.render_style;
         egui::ComboBox::from_label("View")
-            .selected_text(self.render_style.label())
+            .selected_text(selected_render_style.label())
             .show_ui(ui, |ui| {
                 ui.selectable_value(
-                    &mut self.render_style,
+                    &mut selected_render_style,
                     RenderStyle::RawMath,
                     "Raw Math View",
                 );
                 ui.selectable_value(
-                    &mut self.render_style,
+                    &mut selected_render_style,
                     RenderStyle::Artistic,
                     "Artistic View",
                 );
             });
+        if selected_render_style != self.render_style {
+            self.render_style = selected_render_style;
+            self.mark_cpu_texture_dirty();
+        }
 
         ui.checkbox(&mut self.judge_mode, "Judge Mode");
+        ui.checkbox(&mut self.dev_diagnostics, "Dev diagnostics");
         if self.gpu_lenia.is_some() {
+            let previous = self.prefer_gpu_lenia;
             ui.checkbox(&mut self.prefer_gpu_lenia, "GPU high-quality Lenia");
+            if previous != self.prefer_gpu_lenia {
+                self.mark_cpu_texture_dirty();
+                self.tick_accumulator = Duration::ZERO;
+            }
         } else {
             ui.label("GPU high-quality Lenia: unavailable");
         }
@@ -1224,6 +1349,7 @@ impl PeterMathApp {
                 if lenia_changed {
                     self.sync_gpu_lenia_from_cpu();
                     self.step_count = 0;
+                    self.mark_cpu_texture_dirty();
                     self.refresh_lenia_inspection();
                     self.reset_metric_history();
                 }
@@ -1248,6 +1374,7 @@ impl PeterMathApp {
                 if ui.button("Random deterministic seed").clicked() {
                     self.life.reset_random();
                     self.step_count = 0;
+                    self.mark_cpu_texture_dirty();
                 }
                 ui.label("Rule B3/S23: birth with 3 neighbors; survival with 2 or 3 neighbors.");
             }
@@ -1270,6 +1397,11 @@ impl PeterMathApp {
             ui.label(format!("phase: {}", phase.label()));
             ui.small(phase.description());
             self.draw_metric_history(ui);
+        }
+
+        if self.judge_mode || self.dev_diagnostics {
+            ui.separator();
+            self.draw_performance_diagnostics(ui);
         }
 
         ui.separator();
@@ -1301,6 +1433,38 @@ impl PeterMathApp {
                 ui.label("4. Compare the new pattern and export evidence.");
             }
         }
+    }
+
+    fn draw_performance_diagnostics(&self, ui: &mut egui::Ui) {
+        ui.heading("Performance");
+        ui.label(format!("FPS estimate {:.1}", self.performance.fps_estimate));
+        ui.label(format!(
+            "frame {:.2} ms · update {:.2} ms",
+            self.performance.latest.frame_ms, self.performance.latest.update_ms
+        ));
+        ui.label(format!(
+            "render/upload {:.2} ms · CPU sync {:.2} ms",
+            self.performance.latest.render_ms, self.performance.latest.cpu_sync_ms
+        ));
+        let source = self.performance.source_grid;
+        let gpu = self
+            .performance
+            .gpu_grid
+            .map(|size| format!("{size}x{size}"))
+            .unwrap_or_else(|| "unavailable".to_owned());
+        ui.small(format!(
+            "{} · source {}x{} · GPU {}",
+            self.backend_label(),
+            source.0,
+            source.1,
+            gpu
+        ));
+        ui.small(format!(
+            "CPU sync every {} GPU batches · pending GPU steps {} · metric samples {}",
+            self.performance.cpu_sync_interval,
+            self.performance.pending_steps,
+            self.metric_history.len()
+        ));
     }
 
     fn draw_lenia_mathematical_frame(&self, ui: &mut egui::Ui) {
@@ -1450,21 +1614,40 @@ impl PeterMathApp {
 
 impl eframe::App for PeterMathApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let frame_start = Instant::now();
+        let frame_delta = frame_start
+            .checked_duration_since(self.last_tick)
+            .unwrap_or(Duration::ZERO)
+            .min(MAX_FRAME_DELTA);
+        self.last_tick = frame_start;
+        self.performance.record_frame_delta(frame_delta);
+
         self.handle_shortcuts(ctx);
         if !ctx.input(|input| input.pointer.primary_down()) {
             self.pointer_edit_active = false;
         }
 
+        let mut update_duration = Duration::ZERO;
+        let mut render_duration = Duration::ZERO;
+        let mut cpu_sync_duration = Duration::ZERO;
+
         if self.running {
-            let elapsed = self.last_tick.elapsed();
-            if elapsed >= Duration::from_millis(66) {
+            self.tick_accumulator += frame_delta;
+            let update_start = Instant::now();
+            let mut batches = 0;
+            while self.tick_accumulator >= TARGET_TICK && batches < MAX_UPDATE_BATCHES {
                 if self.gpu_lenia_active() {
                     if let Some(gpu) = &self.gpu_lenia {
                         gpu.update_params(lenia_params(&self.lenia), self.render_style);
                         gpu.queue_steps(self.steps_per_frame);
                     }
-                    if self.step_count.is_multiple_of(4) {
+                    self.gpu_cpu_sync_counter += 1;
+                    if self.gpu_cpu_sync_counter >= self.gpu_cpu_sync_interval {
+                        let cpu_sync_start = Instant::now();
                         self.lenia.step();
+                        cpu_sync_duration += cpu_sync_start.elapsed();
+                        self.gpu_cpu_sync_counter = 0;
+                        self.mark_cpu_texture_dirty();
                     }
                     self.step_count += self.steps_per_frame as u64;
                 } else {
@@ -1472,13 +1655,18 @@ impl eframe::App for PeterMathApp {
                         self.step_active();
                     }
                 }
+                self.tick_accumulator -= TARGET_TICK;
+                batches += 1;
+            }
+            if batches == MAX_UPDATE_BATCHES && self.tick_accumulator > TARGET_TICK {
+                self.tick_accumulator = TARGET_TICK;
+            }
+            if batches > 0 {
                 self.refresh_lenia_inspection();
                 self.record_metric_history();
-                self.last_tick = Instant::now();
-                ctx.request_repaint();
-            } else {
-                ctx.request_repaint_after(Duration::from_millis(66) - elapsed);
             }
+            update_duration = update_start.elapsed();
+            ctx.request_repaint_after(TARGET_TICK);
         }
 
         egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
@@ -1519,6 +1707,7 @@ impl eframe::App for PeterMathApp {
             ui.vertical_centered(|ui| {
                 ui.add_space(8.0);
                 if self.gpu_lenia_active() {
+                    let render_start = Instant::now();
                     egui::Frame::canvas(ui.style()).show(ui, |ui| {
                         let (rect, response) =
                             ui.allocate_exact_size(size, egui::Sense::click_and_drag());
@@ -1531,17 +1720,23 @@ impl eframe::App for PeterMathApp {
                         self.apply_lenia_brush(rect, &response);
                         self.draw_lenia_inspection_overlay(ui.painter(), rect);
                     });
+                    render_duration += render_start.elapsed();
                 } else {
-                    let (w, h) = self.render_active();
-                    let image = ColorImage::from_rgba_unmultiplied([w, h], &self.pixels);
-                    if let Some(texture) = &mut self.texture {
-                        texture.set(image, TextureOptions::LINEAR);
-                    } else {
-                        self.texture = Some(ctx.load_texture(
-                            "peterMath-field",
-                            image,
-                            TextureOptions::LINEAR,
-                        ));
+                    if self.cpu_texture_dirty || self.texture.is_none() {
+                        let render_start = Instant::now();
+                        let (w, h) = self.render_active();
+                        let image = ColorImage::from_rgba_unmultiplied([w, h], &self.pixels);
+                        if let Some(texture) = &mut self.texture {
+                            texture.set(image, TextureOptions::LINEAR);
+                        } else {
+                            self.texture = Some(ctx.load_texture(
+                                "peterMath-field",
+                                image,
+                                TextureOptions::LINEAR,
+                            ));
+                        }
+                        self.cpu_texture_dirty = false;
+                        render_duration += render_start.elapsed();
                     }
                     if let Some(texture) = &self.texture {
                         let texture_id = texture.id();
@@ -1574,6 +1769,10 @@ impl eframe::App for PeterMathApp {
                 ));
             });
         });
+
+        self.performance
+            .set_timings(update_duration, render_duration, cpu_sync_duration);
+        self.update_performance_metadata();
     }
 }
 
@@ -1605,4 +1804,8 @@ fn metric_bar(ui: &mut egui::Ui, label: &str, value: f32) {
         ui.label(label);
         ui.add(egui::ProgressBar::new(value.clamp(0.0, 1.0)).show_percentage());
     });
+}
+
+fn duration_ms(duration: Duration) -> f32 {
+    duration.as_secs_f32() * 1000.0
 }
