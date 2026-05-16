@@ -47,6 +47,33 @@ impl ReactionDiffusionSim {
         &self.b
     }
 
+    pub fn paint_brush(&mut self, x: f32, y: f32, radius: f32, strength: f32, inject_b: bool) {
+        let radius = radius.max(1.0);
+        let strength = strength.clamp(0.0, 1.0);
+        let r = radius.ceil() as isize;
+        let cx = x.round() as isize;
+        let cy = y.round() as isize;
+        for dy in -r..=r {
+            for dx in -r..=r {
+                let dist = ((dx * dx + dy * dy) as f32).sqrt();
+                if dist > radius {
+                    continue;
+                }
+                let falloff = 1.0 - dist / radius;
+                let amount = strength * falloff;
+                let idx = wrap_index(cx + dx, cy + dy, self.w, self.h);
+                if inject_b {
+                    self.b[idx] = (self.b[idx] + amount).clamp(0.0, 1.0);
+                    self.a[idx] = (self.a[idx] - amount * 0.85).clamp(0.0, 1.0);
+                } else {
+                    self.b[idx] = (self.b[idx] * (1.0 - amount)).clamp(0.0, 1.0);
+                    self.a[idx] = (self.a[idx] + amount * 0.55).clamp(0.0, 1.0);
+                }
+            }
+        }
+        self.previous_b.copy_from_slice(&self.b);
+    }
+
     pub fn reset_preset(&mut self, preset: &str) {
         self.a.fill(1.0);
         self.b.fill(0.0);

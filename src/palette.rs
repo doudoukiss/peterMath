@@ -3,14 +3,6 @@ pub fn raw_gray(v: f32) -> [u8; 4] {
     [c, c, c, 255]
 }
 
-pub fn scientific(v: f32) -> [u8; 4] {
-    let x = v.clamp(0.0, 1.0);
-    let r = smooth(0.35, 1.00, x);
-    let g = smooth(0.10, 0.85, x) * (1.0 - smooth(0.88, 1.00, x) * 0.35);
-    let b = 1.0 - smooth(0.15, 0.75, x) * 0.85;
-    [to_u8(r), to_u8(g), to_u8(b), 255]
-}
-
 pub fn life_field_delta(v: f32, edge: f32, contour_phase: f32, delta: f32) -> [u8; 4] {
     let x = v.clamp(0.0, 1.0);
     let ridge = smooth(0.015, 0.18, edge);

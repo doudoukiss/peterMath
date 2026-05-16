@@ -35,14 +35,15 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn render_three_system_overview() -> anyhow::Result<()> {
-    let panel = PREVIEW_SIZE;
-    let gap = JUDGE_GAP;
-    let out_w = panel * 3 + gap * 2;
-    let mut combined = vec![0; out_w * panel * 4];
-    fill_rect(&mut combined, out_w, 0, 0, out_w, panel, [7, 10, 12, 255]);
+    let out_w = 1280;
+    let out_h = 720;
+    let main_panel = 672;
+    let thumb_panel = 176;
+    let mut combined = vec![0; out_w * out_h * 4];
+    fill_rect(&mut combined, out_w, 0, 0, out_w, out_h, [7, 10, 12, 255]);
 
-    let mut life = LifeSim::new(128, 128, 3001);
-    for _ in 0..90 {
+    let mut life = LifeSim::new(64, 64, 3001);
+    for _ in 0..16 {
         life.step();
     }
     let mut reaction = ReactionDiffusionSim::new(128, 128, 2001);
@@ -54,31 +55,54 @@ fn render_three_system_overview() -> anyhow::Result<()> {
         lenia.step();
     }
 
-    let life_panel = rendered_panel_life(&life, panel);
-    let reaction_panel = rendered_panel_reaction(&reaction, panel);
-    let lenia_panel = rendered_panel_lenia(&lenia, panel);
-    blit_rgba(&life_panel, panel, panel, &mut combined, out_w, 0);
-    blit_rgba(
-        &reaction_panel,
-        panel,
-        panel,
+    let life_panel = rendered_panel_life(&life, main_panel);
+    let reaction_panel = rendered_panel_reaction(&reaction, thumb_panel);
+    let lenia_panel = rendered_panel_lenia(&lenia, thumb_panel);
+    let life_thumb = rendered_panel_life(&life, thumb_panel);
+    blit_rgba_at(
+        &life_panel,
+        main_panel,
+        main_panel,
         &mut combined,
         out_w,
-        panel + gap,
+        24,
+        24,
     );
-    blit_rgba(
-        &lenia_panel,
-        panel,
-        panel,
+    fill_rect(&mut combined, out_w, 736, 24, 496, 188, [16, 24, 28, 255]);
+    fill_rect(&mut combined, out_w, 736, 236, 496, 188, [16, 24, 28, 255]);
+    fill_rect(&mut combined, out_w, 736, 448, 496, 188, [16, 24, 28, 255]);
+    blit_rgba_at(
+        &life_thumb,
+        thumb_panel,
+        thumb_panel,
         &mut combined,
         out_w,
-        panel * 2 + gap * 2,
+        752,
+        30,
+    );
+    blit_rgba_at(
+        &reaction_panel,
+        thumb_panel,
+        thumb_panel,
+        &mut combined,
+        out_w,
+        752,
+        242,
+    );
+    blit_rgba_at(
+        &lenia_panel,
+        thumb_panel,
+        thumb_panel,
+        &mut combined,
+        out_w,
+        752,
+        454,
     );
 
     export::save_png(
         "peterMath_exports/previews/three_system_overview.png",
         out_w,
-        panel,
+        out_h,
         &combined,
     )
 }
@@ -87,7 +111,7 @@ fn rendered_panel_life(sim: &LifeSim, panel: usize) -> Vec<u8> {
     let (w, h) = sim.size();
     let mut pixels = vec![0; w * h * 4];
     sim.render_rgba(RenderStyle::Artistic, &mut pixels);
-    let mut out = upscale_rgba(&pixels, w, h, panel, panel);
+    let mut out = upscale_nearest_rgba(&pixels, w, h, panel, panel);
     draw_panel_chrome(&mut out, panel, [94, 197, 255, 255]);
     out
 }
@@ -354,6 +378,26 @@ fn upscale_rgba(
     out
 }
 
+fn upscale_nearest_rgba(
+    source: &[u8],
+    source_w: usize,
+    source_h: usize,
+    target_w: usize,
+    target_h: usize,
+) -> Vec<u8> {
+    let mut out = vec![0; target_w * target_h * 4];
+    for y in 0..target_h {
+        let sy = y * source_h / target_h;
+        for x in 0..target_w {
+            let sx = x * source_w / target_w;
+            let source_i = (sy * source_w + sx) * 4;
+            let target_i = (y * target_w + x) * 4;
+            out[target_i..target_i + 4].copy_from_slice(&source[source_i..source_i + 4]);
+        }
+    }
+    out
+}
+
 fn blit_rgba(
     source: &[u8],
     source_w: usize,
@@ -367,6 +411,25 @@ fn blit_rgba(
         let target_start = (y * target_w + x_offset) * 4;
         target[target_start..target_start + source_w * 4]
             .copy_from_slice(&source[source_start..source_start + source_w * 4]);
+    }
+}
+
+fn blit_rgba_at(
+    source: &[u8],
+    source_w: usize,
+    source_h: usize,
+    target: &mut [u8],
+    target_w: usize,
+    x_offset: usize,
+    y_offset: usize,
+) {
+    let target_h = target.len() / target_w / 4;
+    for y in 0..source_h.min(target_h.saturating_sub(y_offset)) {
+        let source_start = y * source_w * 4;
+        let target_start = ((y + y_offset) * target_w + x_offset) * 4;
+        let copy_w = source_w.min(target_w.saturating_sub(x_offset));
+        target[target_start..target_start + copy_w * 4]
+            .copy_from_slice(&source[source_start..source_start + copy_w * 4]);
     }
 }
 
