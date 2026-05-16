@@ -29,6 +29,7 @@ pub struct PeterMathApp {
     prefer_gpu_lenia: bool,
     running: bool,
     judge_mode: bool,
+    show_mode: ShowModeState,
     tool: InteractionTool,
     active_preset: LeniaPreset,
     active_stamp: LeniaStamp,
@@ -176,6 +177,194 @@ struct PerformanceStats {
     gpu_grid: Option<usize>,
     pending_steps: u32,
     cpu_sync_interval: usize,
+}
+
+#[derive(Clone, Copy, Default)]
+struct ShowModeState {
+    enabled: bool,
+    playing: bool,
+    scene_index: usize,
+    scene_elapsed: f32,
+    total_elapsed: f32,
+    applied_scene_index: Option<usize>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum ShowSceneId {
+    Opening,
+    LifeStructure,
+    ReactionLabyrinth,
+    ReactionMitosis,
+    LeniaOrbital,
+    LeniaDenseBloom,
+}
+
+#[derive(Clone, Copy)]
+enum ShowSetup {
+    LeniaPreset(LeniaPreset),
+    ReactionPreset(&'static str),
+    LifeStructureShowcase,
+}
+
+#[derive(Clone, Copy)]
+struct ShowNarration {
+    initial_zh: &'static str,
+    parameters_zh: &'static str,
+    formula_ascii: &'static str,
+    why_zh: &'static str,
+    conclusion_zh: &'static str,
+}
+
+#[derive(Clone, Copy)]
+struct ShowScene {
+    id: ShowSceneId,
+    title_zh: &'static str,
+    duration_secs: f32,
+    mode: SimMode,
+    render_style: RenderStyle,
+    step_rate: usize,
+    setup: ShowSetup,
+    narration: ShowNarration,
+}
+
+impl ShowModeState {
+    fn enabled_default() -> Self {
+        Self {
+            enabled: true,
+            playing: true,
+            scene_index: 0,
+            scene_elapsed: 0.0,
+            total_elapsed: 0.0,
+            applied_scene_index: None,
+        }
+    }
+}
+
+impl ShowSceneId {
+    fn id(self) -> &'static str {
+        match self {
+            Self::Opening => "opening",
+            Self::LifeStructure => "life_structure_showcase",
+            Self::ReactionLabyrinth => "reaction_labyrinth",
+            Self::ReactionMitosis => "reaction_mitosis",
+            Self::LeniaOrbital => "lenia_orbital_field",
+            Self::LeniaDenseBloom => "lenia_dense_bloom",
+        }
+    }
+}
+
+fn show_scenes() -> [ShowScene; 6] {
+    [
+        ShowScene {
+            id: ShowSceneId::Opening,
+            title_zh: "开场导览：局部规则生成整体结构",
+            duration_secs: 6.0,
+            mode: SimMode::Lenia,
+            render_style: RenderStyle::Artistic,
+            step_rate: 1,
+            setup: ShowSetup::LeniaPreset(LeniaPreset::OrbitalField),
+            narration: ShowNarration {
+                initial_zh: "初始图形：一组柔和的连续场种子，作为三种系统的共同入口。",
+                parameters_zh: "参数条件：自动演示会依次切换系统、预设和速度，评委无需先调参。",
+                formula_ascii: "local rule + repeated update -> global structure",
+                why_zh: "每个点只根据附近邻居更新，但重复很多次后会出现整体形态。",
+                conclusion_zh: "观察目标：把项目理解为一组可运行的数学实验，而不是预渲染动画。",
+            },
+        },
+        ShowScene {
+            id: ShowSceneId::LifeStructure,
+            title_zh: "生命游戏：结构图谱",
+            duration_secs: 18.0,
+            mode: SimMode::GameOfLife,
+            render_style: RenderStyle::Artistic,
+            step_rate: 1,
+            setup: ShowSetup::LifeStructureShowcase,
+            narration: ShowNarration {
+                initial_zh: "初始图形：方块、蜂巢、面包、闪烁器、蟾蜍、信标和滑翔机分区摆放。",
+                parameters_zh: "参数条件：96x96 教学网格，B3/S23 固定规则，演化速度 1 步/批次。",
+                formula_ascii: "dead+n=3->alive; alive+n=2 or 3->alive; else->dead",
+                why_zh: "每个格子只看周围 8 个邻居，孤立、拥挤和刚好平衡会产生不同命运。",
+                conclusion_zh: "预期结果：同时看到静止结构、周期结构和会移动的滑翔机。",
+            },
+        },
+        ShowScene {
+            id: ShowSceneId::ReactionLabyrinth,
+            title_zh: "反应扩散：迷宫生长",
+            duration_secs: 18.0,
+            mode: SimMode::ReactionDiffusion,
+            render_style: RenderStyle::Artistic,
+            step_rate: 8,
+            setup: ShowSetup::ReactionPreset("labyrinth"),
+            narration: ShowNarration {
+                initial_zh: "初始图形：许多 B 物质扰动点散布在 A 物质背景中。",
+                parameters_zh: "参数条件：feed=0.029，kill=0.057，较密集种子，演化速度 8 步/批次。",
+                formula_ascii: "b_next = b + dt*(Db*laplace(b) + a*b*b - (kill+feed)*b)",
+                why_zh: "B 会扩散也会消耗 A；反应和扩散速度接近时，边界会互相追逐。",
+                conclusion_zh: "预期结果：斑点逐渐连成弯曲通道，形成迷宫式不稳定边界。",
+            },
+        },
+        ShowScene {
+            id: ShowSceneId::ReactionMitosis,
+            title_zh: "反应扩散：细胞分裂",
+            duration_secs: 12.0,
+            mode: SimMode::ReactionDiffusion,
+            render_style: RenderStyle::Artistic,
+            step_rate: 8,
+            setup: ShowSetup::ReactionPreset("mitosis"),
+            narration: ShowNarration {
+                initial_zh: "初始图形：少量圆形扰动点，像培养皿里的化学斑块。",
+                parameters_zh: "参数条件：feed=0.0367，kill=0.0649，同一公式但反应/补给平衡不同。",
+                formula_ascii: "a_next = a + dt*(Da*laplace(a) - a*b*b + feed*(1-a))",
+                why_zh: "改变 feed/kill 会改变物质补给和死亡速度，图案不再走向迷宫。",
+                conclusion_zh: "预期结果：同一套代码和公式，仅参数变化就能产生另一类纹理。",
+            },
+        },
+        ShowScene {
+            id: ShowSceneId::LeniaOrbital,
+            title_zh: "Lenia：轨道生命场",
+            duration_secs: 22.0,
+            mode: SimMode::Lenia,
+            render_style: RenderStyle::Artistic,
+            step_rate: 1,
+            setup: ShowSetup::LeniaPreset(LeniaPreset::OrbitalField),
+            narration: ShowNarration {
+                initial_zh: "初始图形：螺旋分布的连续质量种子，形成可运动的柔性场。",
+                parameters_zh:
+                    "参数条件：GPU 优先，radius=9，growth center=0.31，growth width=0.052。",
+                formula_ascii: "u_next = clamp(u + dt*(G(K*u) - damping*u), 0, 1)",
+                why_zh: "每个点听取一圈邻域平均值，刚好接近增长中心时增强，否则衰减。",
+                conclusion_zh: "预期结果：边界、脊线和质心漂移共同呈现类似生命的连续运动。",
+            },
+        },
+        ShowScene {
+            id: ShowSceneId::LeniaDenseBloom,
+            title_zh: "Lenia：密集开花与湍动",
+            duration_secs: 14.0,
+            mode: SimMode::Lenia,
+            render_style: RenderStyle::Artistic,
+            step_rate: 1,
+            setup: ShowSetup::LeniaPreset(LeniaPreset::DenseBloom),
+            narration: ShowNarration {
+                initial_zh: "初始图形：高密度连续场，让许多区域同时接近增长条件。",
+                parameters_zh: "参数条件：dense bloom 预设，较宽增长窗口和较高初始质量。",
+                formula_ascii: "growth = G(K*u); too much mass -> saturation or decay",
+                why_zh: "当太多点同时增长，局部竞争会增强，系统可能饱和、湍动或衰退。",
+                conclusion_zh: "预期结果：看到从快速增长到不稳定边界，再到稳定或衰退的过程。",
+            },
+        },
+    ]
+}
+
+fn show_total_duration_secs() -> f32 {
+    show_scenes().iter().map(|scene| scene.duration_secs).sum()
+}
+
+fn show_elapsed_before_scene(scene_index: usize) -> f32 {
+    show_scenes()
+        .iter()
+        .take(scene_index)
+        .map(|scene| scene.duration_secs)
+        .sum()
 }
 
 impl InteractionTool {
@@ -476,7 +665,8 @@ impl PeterMathApp {
             gpu_lenia,
             prefer_gpu_lenia: gpu_ready,
             running: true,
-            judge_mode: false,
+            judge_mode: true,
+            show_mode: ShowModeState::enabled_default(),
             tool: InteractionTool::Draw,
             active_preset: LeniaPreset::OrbitalField,
             active_stamp: LeniaStamp::SoftCell,
@@ -725,6 +915,174 @@ impl PeterMathApp {
         self.reset_metric_history();
     }
 
+    fn current_show_scene(&self) -> ShowScene {
+        let scenes = show_scenes();
+        scenes[self.show_mode.scene_index.min(scenes.len() - 1)]
+    }
+
+    fn update_show_total_elapsed(&mut self) {
+        self.show_mode.total_elapsed =
+            show_elapsed_before_scene(self.show_mode.scene_index) + self.show_mode.scene_elapsed;
+    }
+
+    fn start_show_mode(&mut self) {
+        self.show_mode = ShowModeState::enabled_default();
+        self.judge_mode = true;
+        self.show_active_region_overlay = true;
+        self.apply_show_scene(0);
+        self.running = true;
+        self.status = "演示模式已开始：系统会自动切换代表性实验。".to_owned();
+    }
+
+    fn exit_show_mode(&mut self) {
+        self.show_mode.enabled = false;
+        self.show_mode.playing = false;
+        self.running = false;
+        self.status = "已退出演示模式；当前画面保留为手动实验起点。".to_owned();
+    }
+
+    fn toggle_show_playing(&mut self) {
+        if !self.show_mode.enabled {
+            self.start_show_mode();
+            return;
+        }
+        self.show_mode.playing = !self.show_mode.playing;
+        self.running = self.show_mode.playing;
+        self.status = if self.show_mode.playing {
+            "演示继续播放。".to_owned()
+        } else {
+            "演示已暂停，可继续、跳段或退出手动实验。".to_owned()
+        };
+    }
+
+    fn set_show_scene(&mut self, index: usize) {
+        let scenes = show_scenes();
+        self.show_mode.enabled = true;
+        self.show_mode.scene_index = index.min(scenes.len() - 1);
+        self.show_mode.scene_elapsed = 0.0;
+        self.update_show_total_elapsed();
+        self.apply_show_scene(self.show_mode.scene_index);
+    }
+
+    fn jump_show_scene(&mut self, delta: isize) {
+        let scenes = show_scenes();
+        let next = (self.show_mode.scene_index as isize + delta).clamp(0, scenes.len() as isize - 1)
+            as usize;
+        self.set_show_scene(next);
+        self.show_mode.playing = true;
+        self.running = true;
+    }
+
+    fn restart_show_mode(&mut self) {
+        self.show_mode = ShowModeState::enabled_default();
+        self.apply_show_scene(0);
+        self.running = true;
+        self.status = "演示已从第一段重新开始。".to_owned();
+    }
+
+    fn pause_show_for_manual_interaction(&mut self) {
+        if self.show_mode.enabled && self.show_mode.playing {
+            self.show_mode.playing = false;
+            self.running = false;
+            self.status =
+                "演示已暂停：检测到手动参数或画布操作，可继续演示或退出手动实验。".to_owned();
+        }
+    }
+
+    fn ensure_show_scene_applied(&mut self) {
+        if self.show_mode.enabled
+            && self.show_mode.applied_scene_index != Some(self.show_mode.scene_index)
+        {
+            self.apply_show_scene(self.show_mode.scene_index);
+        }
+    }
+
+    fn apply_show_scene(&mut self, index: usize) {
+        let scenes = show_scenes();
+        let index = index.min(scenes.len() - 1);
+        let scene = scenes[index];
+
+        self.mode = scene.mode;
+        self.render_style = scene.render_style;
+        self.steps_per_frame = scene.step_rate;
+        self.judge_mode = true;
+        self.show_active_region_overlay = true;
+        self.show_kernel_overlay = matches!(scene.mode, SimMode::Lenia);
+        self.tool = InteractionTool::Pan;
+        self.step_count = 0;
+        self.tick_accumulator = Duration::ZERO;
+        self.gpu_cpu_sync_counter = 0;
+        self.clear_comparison_result();
+
+        match scene.setup {
+            ShowSetup::LeniaPreset(preset) => {
+                self.active_preset = preset;
+                self.grid_profile = GridProfile::Reference192;
+                let size = self.grid_profile.size();
+                if self.lenia.size() != (size, size) {
+                    self.lenia.resize(size, size);
+                }
+                self.lenia.reset_preset(preset.id());
+                self.prefer_gpu_lenia = self.gpu_lenia.is_some();
+                let (w, h) = self.lenia.size();
+                self.inspected_lenia = Some(self.lenia.inspect_point(w / 2, h / 2));
+                self.sync_gpu_lenia_from_cpu();
+            }
+            ShowSetup::ReactionPreset(preset) => {
+                self.reaction.reset_preset(preset);
+            }
+            ShowSetup::LifeStructureShowcase => {
+                if self.life.size() != (96, 96) {
+                    self.life.resize(96, 96);
+                }
+                self.life.reset_preset("structure_showcase");
+            }
+        }
+
+        self.texture = None;
+        self.mark_cpu_texture_dirty();
+        self.refresh_lenia_inspection();
+        self.reset_metric_history();
+        self.show_mode.applied_scene_index = Some(index);
+        self.update_show_total_elapsed();
+        self.status = format!("演示场景：{}", scene.title_zh);
+    }
+
+    fn advance_show_mode(&mut self, frame_delta: Duration) {
+        if !self.show_mode.enabled || !self.show_mode.playing {
+            return;
+        }
+
+        let scenes = show_scenes();
+        let mut remaining = frame_delta.as_secs_f32();
+        while remaining > 0.0 && self.show_mode.playing {
+            let scene = scenes[self.show_mode.scene_index.min(scenes.len() - 1)];
+            let remaining_in_scene = (scene.duration_secs - self.show_mode.scene_elapsed).max(0.0);
+            if remaining < remaining_in_scene {
+                self.show_mode.scene_elapsed += remaining;
+                remaining = 0.0;
+            } else {
+                self.show_mode.scene_elapsed = scene.duration_secs;
+                remaining -= remaining_in_scene;
+                if self.show_mode.scene_index + 1 >= scenes.len() {
+                    self.show_mode.playing = false;
+                    self.running = false;
+                    self.status =
+                        "演示已完成；可重新开始、跳回某一段，或退出到手动实验。".to_owned();
+                    break;
+                }
+                self.show_mode.scene_index += 1;
+                self.show_mode.scene_elapsed = 0.0;
+                self.apply_show_scene(self.show_mode.scene_index);
+            }
+        }
+
+        self.update_show_total_elapsed();
+        if self.show_mode.playing {
+            self.running = true;
+        }
+    }
+
     fn step_active(&mut self) {
         match self.mode {
             SimMode::Lenia => self.lenia.step(),
@@ -813,7 +1171,8 @@ impl PeterMathApp {
             metrics,
             active_region,
         );
-        let parameters = self.lenia_parameter_json(active_region, phase);
+        let parameters =
+            self.attach_show_mode_json(self.lenia_parameter_json(active_region, phase));
 
         Ok(GpuLeniaExportState {
             size,
@@ -1188,6 +1547,28 @@ impl PeterMathApp {
             )
         });
 
+        if self.show_mode.enabled {
+            if shortcuts.0 {
+                self.toggle_show_playing();
+                return;
+            }
+            if shortcuts.1
+                || shortcuts.2
+                || shortcuts.3
+                || shortcuts.4
+                || shortcuts.5
+                || shortcuts.6
+                || shortcuts.7
+                || shortcuts.8
+                || shortcuts.9
+                || shortcuts.10
+                || shortcuts.11
+            {
+                self.pause_show_for_manual_interaction();
+                self.show_mode.playing = false;
+            }
+        }
+
         if shortcuts.0 {
             self.running = !self.running;
         }
@@ -1377,6 +1758,7 @@ impl PeterMathApp {
             return;
         }
 
+        self.pause_show_for_manual_interaction();
         let (w, h) = self.lenia.size();
         let x = ((pos.x - rect.min.x) / rect.width() * w as f32).clamp(0.0, w as f32 - 1.0);
         let y = ((pos.y - rect.min.y) / rect.height() * h as f32).clamp(0.0, h as f32 - 1.0);
@@ -1569,6 +1951,22 @@ impl PeterMathApp {
         })
     }
 
+    fn show_mode_json(&self) -> serde_json::Value {
+        if !self.show_mode.enabled {
+            return serde_json::Value::Null;
+        }
+        show_mode_json_from_state(&self.show_mode)
+    }
+
+    fn attach_show_mode_json(&self, mut parameters: serde_json::Value) -> serde_json::Value {
+        if self.show_mode.enabled {
+            if let Some(object) = parameters.as_object_mut() {
+                object.insert("show_mode".to_owned(), self.show_mode_json());
+            }
+        }
+        parameters
+    }
+
     fn active_region_json(&self) -> serde_json::Value {
         Self::active_region_value(self.active_region())
     }
@@ -1677,7 +2075,7 @@ impl PeterMathApp {
     }
 
     fn parameter_json(&self) -> serde_json::Value {
-        match self.mode {
+        let parameters = match self.mode {
             SimMode::Lenia => {
                 self.lenia_parameter_json(self.active_region(), self.population_phase_analysis())
             }
@@ -1702,13 +2100,88 @@ impl PeterMathApp {
                 "phase_analysis": self.population_phase_json(),
                 "pattern_detection": self.pattern_detection_json(),
             }),
+        };
+        self.attach_show_mode_json(parameters)
+    }
+
+    fn draw_show_mode_controls(&mut self, ui: &mut egui::Ui) {
+        ui.heading("演示模式 Show Mode");
+        if !self.show_mode.enabled {
+            if ui.button("开始评审演示").clicked() {
+                self.start_show_mode();
+            }
+            ui.small("自动播放约 90 秒，按顺序展示三种数学生命系统。");
+            return;
         }
+
+        let scene = self.current_show_scene();
+        let total_duration = show_total_duration_secs();
+        let scene_progress = (self.show_mode.scene_elapsed / scene.duration_secs).clamp(0.0, 1.0);
+        let total_progress = (self.show_mode.total_elapsed / total_duration).clamp(0.0, 1.0);
+        ui.label(format!(
+            "第 {}/{} 段：{}",
+            self.show_mode.scene_index + 1,
+            show_scenes().len(),
+            scene.title_zh
+        ));
+        ui.add(egui::ProgressBar::new(scene_progress).text(format!(
+            "{:.0}/{:.0}s",
+            self.show_mode.scene_elapsed, scene.duration_secs
+        )));
+        ui.add(
+            egui::ProgressBar::new(total_progress)
+                .text(format!("总进度 {:.0}%", total_progress * 100.0)),
+        );
+        ui.horizontal(|ui| {
+            if ui
+                .button(if self.show_mode.playing {
+                    "暂停演示"
+                } else {
+                    "继续演示"
+                })
+                .clicked()
+            {
+                self.toggle_show_playing();
+            }
+            if ui.button("上一段").clicked() {
+                self.jump_show_scene(-1);
+            }
+            if ui.button("下一段").clicked() {
+                self.jump_show_scene(1);
+            }
+        });
+        ui.horizontal(|ui| {
+            if ui.button("重新开始").clicked() {
+                self.restart_show_mode();
+            }
+            if ui.button("退出到手动实验").clicked() {
+                self.exit_show_mode();
+            }
+        });
+        ui.small("手动修改参数或画布时，演示会自动暂停。");
+    }
+
+    fn draw_show_mode_narration(&self, ui: &mut egui::Ui) {
+        if !self.show_mode.enabled {
+            return;
+        }
+        let scene = self.current_show_scene();
+        ui.heading("当前演示");
+        ui.strong(scene.title_zh);
+        ui.label(scene.narration.initial_zh);
+        ui.label(scene.narration.parameters_zh);
+        ui.monospace(scene.narration.formula_ascii);
+        ui.label(scene.narration.why_zh);
+        ui.label(scene.narration.conclusion_zh);
+        ui.separator();
     }
 
     fn draw_left_panel(&mut self, ui: &mut egui::Ui) {
         ui.heading("peterMath");
         ui.label("由数学规则生成的计算艺术");
         ui.small("美感来自场、卷积核、扩散和可复现的确定性种子。");
+        ui.separator();
+        self.draw_show_mode_controls(ui);
         ui.separator();
 
         let mut selected_mode = self.mode;
@@ -1728,6 +2201,7 @@ impl PeterMathApp {
                 );
             });
         if selected_mode != self.mode {
+            self.pause_show_for_manual_interaction();
             self.mode = selected_mode;
             self.step_count = 0;
             self.texture = None;
@@ -1752,6 +2226,7 @@ impl PeterMathApp {
                 );
             });
         if selected_render_style != self.render_style {
+            self.pause_show_for_manual_interaction();
             self.render_style = selected_render_style;
             self.mark_cpu_texture_dirty();
         }
@@ -1764,25 +2239,38 @@ impl PeterMathApp {
             let previous = self.prefer_gpu_lenia;
             ui.checkbox(&mut self.prefer_gpu_lenia, "GPU 高质量 Lenia");
             if previous != self.prefer_gpu_lenia {
+                self.pause_show_for_manual_interaction();
                 self.mark_cpu_texture_dirty();
                 self.tick_accumulator = Duration::ZERO;
             }
         } else {
             ui.label("GPU 高质量 Lenia：不可用");
         }
-        ui.add(egui::Slider::new(&mut self.steps_per_frame, 1..=20).text("演化速度"));
+        if ui
+            .add(egui::Slider::new(&mut self.steps_per_frame, 1..=20).text("演化速度"))
+            .changed()
+        {
+            self.pause_show_for_manual_interaction();
+        }
 
         ui.horizontal(|ui| {
             if ui
                 .button(if self.running { "暂停" } else { "运行" })
                 .clicked()
             {
-                self.running = !self.running;
+                let was_running = self.running;
+                self.pause_show_for_manual_interaction();
+                self.running = !was_running;
+                self.show_mode.playing = false;
             }
             if ui.button("单步").clicked() {
+                self.pause_show_for_manual_interaction();
+                self.show_mode.playing = false;
+                self.running = false;
                 self.step_once();
             }
             if ui.button("重置").clicked() {
+                self.pause_show_for_manual_interaction();
                 if self.mode == SimMode::Lenia {
                     self.reset_lenia_with_history();
                 } else {
@@ -1815,6 +2303,7 @@ impl PeterMathApp {
                         ui.selectable_value(&mut selected, preset, preset.label());
                     }
                     if selected != self.active_preset {
+                        self.pause_show_for_manual_interaction();
                         self.load_lenia_preset(selected);
                     }
                 });
@@ -1829,9 +2318,16 @@ impl PeterMathApp {
                 });
             ui.small(self.active_stamp.description());
 
-            ui.add(egui::Slider::new(&mut self.brush_radius, 1.0..=32.0).text("画笔半径"));
-            ui.add(egui::Slider::new(&mut self.brush_strength, 0.05..=1.0).text("画笔强度"));
-            ui.add(egui::Slider::new(&mut self.random_density, 0.02..=0.85).text("随机密度"));
+            let brush_changed = ui
+                .add(egui::Slider::new(&mut self.brush_radius, 1.0..=32.0).text("画笔半径"))
+                .changed()
+                | ui.add(egui::Slider::new(&mut self.brush_strength, 0.05..=1.0).text("画笔强度"))
+                    .changed()
+                | ui.add(egui::Slider::new(&mut self.random_density, 0.02..=0.85).text("随机密度"))
+                    .changed();
+            if brush_changed {
+                self.pause_show_for_manual_interaction();
+            }
 
             egui::ComboBox::from_label("网格精度")
                 .selected_text(self.grid_profile.label())
@@ -1841,20 +2337,24 @@ impl PeterMathApp {
                         ui.selectable_value(&mut selected, profile, profile.label());
                     }
                     if selected != self.grid_profile {
+                        self.pause_show_for_manual_interaction();
                         self.apply_grid_profile(selected);
                     }
                 });
 
             ui.horizontal(|ui| {
                 if ui.button("清空场").clicked() {
+                    self.pause_show_for_manual_interaction();
                     self.clear_lenia_field();
                 }
                 if ui.button("新种子").clicked() {
+                    self.pause_show_for_manual_interaction();
                     self.new_lenia_seed();
                 }
             });
             ui.horizontal(|ui| {
                 if ui.button("随机场").clicked() {
+                    self.pause_show_for_manual_interaction();
                     self.randomize_lenia_field();
                 }
                 if ui
@@ -1862,6 +2362,7 @@ impl PeterMathApp {
                     .on_hover_text("Z")
                     .clicked()
                 {
+                    self.pause_show_for_manual_interaction();
                     self.undo_lenia();
                 }
                 if ui
@@ -1869,6 +2370,7 @@ impl PeterMathApp {
                     .on_hover_text("Shift+Z")
                     .clicked()
                 {
+                    self.pause_show_for_manual_interaction();
                     self.redo_lenia();
                 }
             });
@@ -1920,6 +2422,7 @@ impl PeterMathApp {
     }
 
     fn draw_right_panel(&mut self, ui: &mut egui::Ui) {
+        self.draw_show_mode_narration(ui);
         ui.heading("参数");
         match self.mode {
             SimMode::Lenia => {
@@ -1953,6 +2456,7 @@ impl PeterMathApp {
                 ui.checkbox(&mut self.show_kernel_overlay, "显示卷积半径")
                     .on_hover_text("在画面上显示被检查点的邻域范围。");
                 if lenia_changed {
+                    self.pause_show_for_manual_interaction();
                     self.sync_gpu_lenia_from_cpu();
                     self.step_count = 0;
                     self.mark_cpu_texture_dirty();
@@ -1961,18 +2465,41 @@ impl PeterMathApp {
                 }
             }
             SimMode::ReactionDiffusion => {
-                ui.add(egui::Slider::new(&mut self.reaction.feed, 0.005..=0.09).text("feed"));
-                ui.add(egui::Slider::new(&mut self.reaction.kill, 0.02..=0.09).text("kill"));
-                ui.add(egui::Slider::new(&mut self.reaction.diff_a, 0.02..=0.30).text("A 扩散"));
-                ui.add(egui::Slider::new(&mut self.reaction.diff_b, 0.005..=0.20).text("B 扩散"));
-                ui.add(egui::Slider::new(&mut self.reaction.dt, 0.2..=1.5).text("时间步长"));
+                let reaction_changed = ui
+                    .add(egui::Slider::new(&mut self.reaction.feed, 0.005..=0.09).text("feed"))
+                    .changed()
+                    | ui.add(egui::Slider::new(&mut self.reaction.kill, 0.02..=0.09).text("kill"))
+                        .changed()
+                    | ui.add(
+                        egui::Slider::new(&mut self.reaction.diff_a, 0.02..=0.30).text("A 扩散"),
+                    )
+                    .changed()
+                    | ui.add(
+                        egui::Slider::new(&mut self.reaction.diff_b, 0.005..=0.20).text("B 扩散"),
+                    )
+                    .changed()
+                    | ui.add(egui::Slider::new(&mut self.reaction.dt, 0.2..=1.5).text("时间步长"))
+                        .changed();
+                if reaction_changed {
+                    self.pause_show_for_manual_interaction();
+                    self.step_count = 0;
+                    self.mark_cpu_texture_dirty();
+                    self.reset_metric_history();
+                }
                 ui.label("规则：两种虚拟化学物质扩散并反应。feed/kill 控制斑点、波纹和迷宫结构。");
             }
             SimMode::GameOfLife => {
-                ui.add(
-                    egui::Slider::new(&mut self.life.random_density, 0.02..=0.55).text("种子密度"),
-                );
+                if ui
+                    .add(
+                        egui::Slider::new(&mut self.life.random_density, 0.02..=0.55)
+                            .text("种子密度"),
+                    )
+                    .changed()
+                {
+                    self.pause_show_for_manual_interaction();
+                }
                 if ui.button("随机确定性种子").clicked() {
+                    self.pause_show_for_manual_interaction();
                     self.life.reset_random();
                     self.step_count = 0;
                     self.mark_cpu_texture_dirty();
@@ -1990,6 +2517,7 @@ impl PeterMathApp {
                 );
                 ui.horizontal(|ui| {
                     if ui.button("导入 RLE").clicked() {
+                        self.pause_show_for_manual_interaction();
                         self.import_life_rle();
                     }
                     if ui.button("导出 RLE").clicked() {
@@ -2426,6 +2954,8 @@ impl eframe::App for PeterMathApp {
         if !ctx.input(|input| input.pointer.primary_down()) {
             self.pointer_edit_active = false;
         }
+        self.ensure_show_scene_applied();
+        self.advance_show_mode(frame_delta);
 
         let mut update_duration = Duration::ZERO;
         let mut render_duration = Duration::ZERO;
@@ -2483,6 +3013,10 @@ impl eframe::App for PeterMathApp {
                 ui.label(format!("种子 {}", self.active_seed()));
                 ui.separator();
                 ui.label(format!("步数 {}", self.step_count));
+                if self.show_mode.enabled {
+                    ui.separator();
+                    ui.label(format!("演示 {}", self.current_show_scene().title_zh));
+                }
                 if self.mode == SimMode::Lenia {
                     ui.separator();
                     ui.label(self.lenia_phase().label());
@@ -2668,6 +3202,34 @@ fn metric_bar(ui: &mut egui::Ui, label: &str, value: f32) {
     });
 }
 
+fn show_mode_json_from_state(show_mode: &ShowModeState) -> serde_json::Value {
+    if !show_mode.enabled {
+        return serde_json::Value::Null;
+    }
+
+    let scenes = show_scenes();
+    let scene = scenes[show_mode.scene_index.min(scenes.len() - 1)];
+    let total_duration = show_total_duration_secs();
+    json!({
+        "enabled": show_mode.enabled,
+        "playing": show_mode.playing,
+        "scene_id": scene.id.id(),
+        "scene_title_zh": scene.title_zh,
+        "scene_index": show_mode.scene_index,
+        "scene_elapsed_seconds": show_mode.scene_elapsed,
+        "scene_duration_seconds": scene.duration_secs,
+        "scene_progress": (show_mode.scene_elapsed / scene.duration_secs).clamp(0.0, 1.0),
+        "total_elapsed_seconds": show_mode.total_elapsed,
+        "total_duration_seconds": total_duration,
+        "total_progress": (show_mode.total_elapsed / total_duration).clamp(0.0, 1.0),
+        "initial_zh": scene.narration.initial_zh,
+        "parameters_zh": scene.narration.parameters_zh,
+        "formula_ascii": scene.narration.formula_ascii,
+        "why_zh": scene.narration.why_zh,
+        "conclusion_zh": scene.narration.conclusion_zh,
+    })
+}
+
 fn metrics_json(metrics: Metrics) -> serde_json::Value {
     json!({
         "mass": metrics.mass,
@@ -2681,4 +3243,44 @@ fn metrics_json(metrics: Metrics) -> serde_json::Value {
 
 fn duration_ms(duration: Duration) -> f32 {
     duration.as_secs_f32() * 1000.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn show_scenes_have_complete_ninety_second_script() {
+        let scenes = show_scenes();
+        let total: f32 = scenes.iter().map(|scene| scene.duration_secs).sum();
+        assert!((total - 90.0).abs() < f32::EPSILON);
+
+        let mut ids = HashSet::new();
+        for scene in scenes {
+            assert!(ids.insert(scene.id.id()));
+            assert!(!scene.title_zh.is_empty());
+            assert!(!scene.narration.initial_zh.is_empty());
+            assert!(!scene.narration.parameters_zh.is_empty());
+            assert!(!scene.narration.formula_ascii.is_empty());
+            assert!(scene.narration.formula_ascii.is_ascii());
+            assert!(!scene.narration.why_zh.is_empty());
+            assert!(!scene.narration.conclusion_zh.is_empty());
+            assert!((1..=20).contains(&scene.step_rate));
+        }
+    }
+
+    #[test]
+    fn show_mode_export_json_describes_current_scene() {
+        let mut state = ShowModeState::enabled_default();
+        state.scene_index = 2;
+        state.scene_elapsed = 5.0;
+        state.total_elapsed = show_elapsed_before_scene(2) + 5.0;
+        let value = show_mode_json_from_state(&state);
+
+        assert_eq!(value["scene_id"], ShowSceneId::ReactionLabyrinth.id());
+        assert_eq!(value["scene_title_zh"], "反应扩散：迷宫生长");
+        assert!(value["formula_ascii"].as_str().unwrap().is_ascii());
+        assert!(value["total_progress"].as_f64().unwrap() > 0.0);
+    }
 }

@@ -162,3 +162,29 @@ impl ReactionDiffusionSim {
         Metrics::from_scalar_grid(&self.b, Some(&self.previous_b), self.w, self.h)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn presets_show_measurable_metric_change() {
+        for preset in ["labyrinth", "mitosis"] {
+            let mut sim = ReactionDiffusionSim::new(96, 96, 2001);
+            sim.reset_preset(preset);
+            let initial = sim.metrics();
+            let mut step_count = 0;
+            for target in [50, 300, 900] {
+                while step_count < target {
+                    sim.step();
+                    step_count += 1;
+                }
+                let current = sim.metrics();
+                let changed = (current.mass - initial.mass).abs() > 0.0005
+                    || (current.entropy - initial.entropy).abs() > 0.0005
+                    || (current.vitality - initial.vitality).abs() > 0.0005;
+                assert!(changed, "{preset} did not change by step {target}");
+            }
+        }
+    }
+}

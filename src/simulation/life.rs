@@ -231,6 +231,16 @@ impl LifeSim {
         (self.w, self.h)
     }
 
+    pub fn resize(&mut self, w: usize, h: usize) {
+        self.w = w.max(16);
+        self.h = h.max(16);
+        let len = self.w * self.h;
+        self.cells = BitGrid::new(len);
+        self.next = BitGrid::new(len);
+        self.age = vec![0.0; len];
+        self.previous_age = vec![0.0; len];
+    }
+
     pub fn reset_preset(&mut self, preset: &str) {
         self.cells.fill(false);
         self.next.fill(false);
@@ -238,8 +248,10 @@ impl LifeSim {
         self.previous_age.fill(0.0);
         match preset {
             "symmetric_seed" => self.seed_symmetric(),
+            "structure_showcase" => self.seed_structure_showcase(),
             _ => self.reset_random(),
         }
+        self.previous_age.copy_from_slice(&self.age);
     }
 
     pub fn clear(&mut self) {
@@ -257,6 +269,7 @@ impl LifeSim {
         for (i, age) in self.age.iter_mut().enumerate() {
             *age = if self.cells.get(i) { 1.0 } else { 0.0 };
         }
+        self.previous_age.copy_from_slice(&self.age);
     }
 
     pub fn get_cell(&self, x: usize, y: usize) -> bool {
@@ -295,6 +308,7 @@ impl LifeSim {
                 self.set_cell(tx, ty, true);
             }
         }
+        self.previous_age.copy_from_slice(&self.age);
     }
 
     pub fn export_rle(&self) -> String {
@@ -479,6 +493,53 @@ impl LifeSim {
                 let idx = wrap_index(x, y, self.w, self.h);
                 self.cells.set(idx, true);
                 self.age[idx] = 1.0;
+            }
+        }
+    }
+
+    fn seed_structure_showcase(&mut self) {
+        self.place_pattern(0.12, 0.12, &[(0, 0), (1, 0), (0, 1), (1, 1)]);
+        self.place_pattern(
+            0.32,
+            0.12,
+            &[(1, 0), (2, 0), (0, 1), (3, 1), (1, 2), (2, 2)],
+        );
+        self.place_pattern(
+            0.53,
+            0.12,
+            &[(1, 0), (2, 0), (0, 1), (3, 1), (1, 2), (3, 2), (2, 3)],
+        );
+        self.place_pattern(0.16, 0.44, &[(0, 0), (1, 0), (2, 0)]);
+        self.place_pattern(
+            0.36,
+            0.44,
+            &[(1, 0), (2, 0), (3, 0), (0, 1), (1, 1), (2, 1)],
+        );
+        self.place_pattern(
+            0.58,
+            0.42,
+            &[
+                (0, 0),
+                (1, 0),
+                (0, 1),
+                (1, 1),
+                (2, 2),
+                (3, 2),
+                (2, 3),
+                (3, 3),
+            ],
+        );
+        self.place_pattern(0.12, 0.68, &[(1, 0), (2, 1), (0, 2), (1, 2), (2, 2)]);
+    }
+
+    fn place_pattern(&mut self, x_ratio: f32, y_ratio: f32, cells: &[(i32, i32)]) {
+        let x0 = (self.w as f32 * x_ratio).round() as isize;
+        let y0 = (self.h as f32 * y_ratio).round() as isize;
+        for &(dx, dy) in cells {
+            let x = x0 + dx as isize;
+            let y = y0 + dy as isize;
+            if x >= 0 && y >= 0 && x < self.w as isize && y < self.h as isize {
+                self.set_cell(x as usize, y as usize, true);
             }
         }
     }
@@ -742,6 +803,54 @@ mod tests {
         sim.step();
         let period = detect_oscillator_period(&[(0, initial)], 2, sim.state_hash());
         assert_eq!(period, Some(2));
+    }
+
+    #[test]
+    fn structure_showcase_contains_representative_patterns() {
+        for size in [64, 96] {
+            let mut sim = LifeSim::new(size, size, 3001);
+            sim.reset_preset("structure_showcase");
+            let report = sim.detect_known_patterns(&[], 0, None);
+            assert!(report.detections.iter().any(|detection| matches!(
+                detection.pattern,
+                KnownPattern::Block | KnownPattern::Beehive | KnownPattern::Loaf
+            )));
+            assert!(report.detections.iter().any(|detection| matches!(
+                detection.pattern,
+                KnownPattern::Blinker | KnownPattern::Toad | KnownPattern::Beacon
+            )));
+            assert!(report
+                .detections
+                .iter()
+                .any(|detection| detection.pattern == KnownPattern::Glider));
+        }
+    }
+
+    #[test]
+    fn structure_showcase_remains_visible_and_glider_drifts() {
+        let mut sim = LifeSim::new(96, 96, 3001);
+        sim.reset_preset("structure_showcase");
+        let initial = sim
+            .detect_known_patterns(&[], 0, None)
+            .glider_track
+            .and_then(|track| track.centroid);
+        assert!(initial.is_some());
+
+        let mut step_count = 0;
+        for target in [1, 4, 16, 64] {
+            while step_count < target {
+                sim.step();
+                step_count += 1;
+            }
+            assert!(!sim.live_points().is_empty());
+        }
+
+        let moved = sim
+            .detect_known_patterns(&[], step_count, initial)
+            .glider_track
+            .and_then(|track| track.direction)
+            .expect("tracked glider direction");
+        assert!(moved.0.abs() > 0.1 || moved.1.abs() > 0.1);
     }
 
     fn assert_detects(rle: &str, expected: KnownPattern) {

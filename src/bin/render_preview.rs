@@ -10,6 +10,7 @@ mod palette;
 mod simulation;
 
 use simulation::lenia::LeniaSim;
+use simulation::life::LifeSim;
 use simulation::reaction_diffusion::ReactionDiffusionSim;
 use simulation::RenderStyle;
 use std::fs;
@@ -23,11 +24,13 @@ fn main() -> anyhow::Result<()> {
     render_lenia()?;
     render_reaction_diffusion()?;
     render_judge_reference()?;
+    render_show_mode_storyboard()?;
     println!("Wrote peterMath_exports/previews/lenia_hero.png");
     println!("Wrote peterMath_exports/previews/reaction_diffusion_texture.png");
     println!("Wrote peterMath_exports/previews/judge_mode_reference.png");
     println!("Wrote peterMath_exports/previews/lenia_showcase.png");
     println!("Wrote peterMath_exports/previews/reaction_diffusion_showcase.png");
+    println!("Wrote peterMath_exports/previews/show_mode_storyboard.png");
     Ok(())
 }
 
@@ -119,6 +122,93 @@ fn render_judge_reference() -> anyhow::Result<()> {
         PREVIEW_SIZE,
         &combined,
     )
+}
+
+fn render_show_mode_storyboard() -> anyhow::Result<()> {
+    let tile = 256;
+    let gap = 18;
+    let out_w = tile * 3 + gap * 4;
+    let out_h = tile * 2 + gap * 3;
+    let mut out = vec![0; out_w * out_h * 4];
+    fill_rect(&mut out, out_w, 0, 0, out_w, out_h, [5, 8, 10, 255]);
+
+    let tiles = [
+        storyboard_lenia("orbital_field", 24),
+        storyboard_life_structure(32),
+        storyboard_reaction("labyrinth", 640),
+        storyboard_reaction("mitosis", 420),
+        storyboard_lenia("orbital_field", 180),
+        storyboard_lenia("dense_bloom", 150),
+    ];
+    let accent = [
+        [100, 232, 218, 255],
+        [216, 240, 139, 255],
+        [255, 157, 102, 255],
+        [255, 118, 168, 255],
+        [154, 185, 255, 255],
+        [255, 219, 128, 255],
+    ];
+
+    for (i, image) in tiles.iter().enumerate() {
+        let col = i % 3;
+        let row = i / 3;
+        let x = gap + col * (tile + gap);
+        let y = gap + row * (tile + gap);
+        fill_rect(
+            &mut out,
+            out_w,
+            x - 3,
+            y - 3,
+            tile + 6,
+            tile + 6,
+            [16, 24, 28, 255],
+        );
+        fill_rect(&mut out, out_w, x - 3, y - 3, tile + 6, 8, accent[i]);
+        blit_rgba_at(image, tile, tile, &mut out, out_w, x, y);
+    }
+
+    export::save_png(
+        "peterMath_exports/previews/show_mode_storyboard.png",
+        out_w,
+        out_h,
+        &out,
+    )
+}
+
+fn storyboard_lenia(preset: &str, steps: usize) -> Vec<u8> {
+    let mut sim = LeniaSim::new(192, 192, 1001);
+    sim.reset_preset(preset);
+    for _ in 0..steps {
+        sim.step();
+    }
+    let (w, h) = sim.size();
+    let mut pixels = vec![0; w * h * 4];
+    sim.render_rgba(RenderStyle::Artistic, &mut pixels);
+    upscale_rgba(&pixels, w, h, 256, 256)
+}
+
+fn storyboard_life_structure(steps: usize) -> Vec<u8> {
+    let mut sim = LifeSim::new(96, 96, 3001);
+    sim.reset_preset("structure_showcase");
+    for _ in 0..steps {
+        sim.step();
+    }
+    let (w, h) = sim.size();
+    let mut pixels = vec![0; w * h * 4];
+    sim.render_rgba(RenderStyle::Artistic, &mut pixels);
+    upscale_rgba(&pixels, w, h, 256, 256)
+}
+
+fn storyboard_reaction(preset: &str, steps: usize) -> Vec<u8> {
+    let mut sim = ReactionDiffusionSim::new(192, 192, 2001);
+    sim.reset_preset(preset);
+    for _ in 0..steps {
+        sim.step();
+    }
+    let (w, h) = sim.size();
+    let mut pixels = vec![0; w * h * 4];
+    sim.render_rgba(RenderStyle::Artistic, &mut pixels);
+    upscale_rgba(&pixels, w, h, 256, 256)
 }
 
 fn render_explanation_panel(sim: &LeniaSim, panel_w: usize, panel_h: usize) -> Vec<u8> {
@@ -278,6 +368,23 @@ fn blit_rgba(
     for y in 0..source_h {
         let source_start = y * source_w * 4;
         let target_start = (y * target_w + x_offset) * 4;
+        target[target_start..target_start + source_w * 4]
+            .copy_from_slice(&source[source_start..source_start + source_w * 4]);
+    }
+}
+
+fn blit_rgba_at(
+    source: &[u8],
+    source_w: usize,
+    source_h: usize,
+    target: &mut [u8],
+    target_w: usize,
+    x_offset: usize,
+    y_offset: usize,
+) {
+    for y in 0..source_h {
+        let source_start = y * source_w * 4;
+        let target_start = ((y + y_offset) * target_w + x_offset) * 4;
         target[target_start..target_start + source_w * 4]
             .copy_from_slice(&source[source_start..source_start + source_w * 4]);
     }
