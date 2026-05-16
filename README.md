@@ -1,18 +1,19 @@
 # peterMath
 
-`peterMath` is a native Rust mathematical life-system artwork for competition submission. It is built around one primary identity: Lenia as a living mathematical field.
+`peterMath` is a native Rust mathematical life-system artwork for competition submission. It now opens with a Chinese three-system overview: Game of Life, Reaction-Diffusion, and Lenia side by side.
 
 This folder is the correct Git repository root.
 
 ## What Judges See
 
-- GPU Lenia opens first as the main artwork, with CPU fallback if GPU setup fails.
-- Raw Math View and Artistic View show the same data field in two visual languages.
+- The first screen explains three mathematical life systems in Chinese, each with formula, phase, activity, and a direct entry button.
+- `数学原始图` and `艺术表达图` show the same data field in two visual languages.
 - The inspector explains field value, delta, gradient, kernel convolution, growth response, and estimated next value.
 - Metrics track mass/activity, entropy, symmetry, stability, and vitality.
+- Preset-first controls keep judge-facing parameter tuning understandable, with advanced sliders folded away.
 - Active-region analysis, phase trends, and the Lenia rule variant explorer make emergence easier to compare.
 - Game of Life detects known still lifes, oscillators, gliders, oscillator periods, and glider drift.
-- Judge Mode gives a concise path for comparing math, visual expression, parameters, and evidence.
+- `评审讲解模式` gives a concise path for comparing math, visual expression, parameters, and evidence.
 - Exports produce PNG snapshots, parameter JSON, share-state JSON, and evidence packs.
 - `web_html/index.html` is an offline browser fallback if the executable cannot run.
 

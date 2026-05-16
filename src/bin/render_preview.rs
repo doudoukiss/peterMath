@@ -10,6 +10,7 @@ mod palette;
 mod simulation;
 
 use simulation::lenia::LeniaSim;
+use simulation::life::LifeSim;
 use simulation::reaction_diffusion::ReactionDiffusionSim;
 use simulation::RenderStyle;
 use std::fs;
@@ -20,15 +21,101 @@ const EXPLANATION_PANEL_WIDTH: usize = 300;
 
 fn main() -> anyhow::Result<()> {
     fs::create_dir_all("peterMath_exports/previews")?;
+    render_three_system_overview()?;
     render_lenia()?;
     render_reaction_diffusion()?;
     render_judge_reference()?;
+    println!("Wrote peterMath_exports/previews/three_system_overview.png");
     println!("Wrote peterMath_exports/previews/lenia_hero.png");
     println!("Wrote peterMath_exports/previews/reaction_diffusion_texture.png");
     println!("Wrote peterMath_exports/previews/judge_mode_reference.png");
     println!("Wrote peterMath_exports/previews/lenia_showcase.png");
     println!("Wrote peterMath_exports/previews/reaction_diffusion_showcase.png");
     Ok(())
+}
+
+fn render_three_system_overview() -> anyhow::Result<()> {
+    let panel = PREVIEW_SIZE;
+    let gap = JUDGE_GAP;
+    let out_w = panel * 3 + gap * 2;
+    let mut combined = vec![0; out_w * panel * 4];
+    fill_rect(&mut combined, out_w, 0, 0, out_w, panel, [7, 10, 12, 255]);
+
+    let mut life = LifeSim::new(128, 128, 3001);
+    for _ in 0..90 {
+        life.step();
+    }
+    let mut reaction = ReactionDiffusionSim::new(128, 128, 2001);
+    for _ in 0..560 {
+        reaction.step();
+    }
+    let mut lenia = LeniaSim::new(96, 96, 1001);
+    for _ in 0..140 {
+        lenia.step();
+    }
+
+    let life_panel = rendered_panel_life(&life, panel);
+    let reaction_panel = rendered_panel_reaction(&reaction, panel);
+    let lenia_panel = rendered_panel_lenia(&lenia, panel);
+    blit_rgba(&life_panel, panel, panel, &mut combined, out_w, 0);
+    blit_rgba(
+        &reaction_panel,
+        panel,
+        panel,
+        &mut combined,
+        out_w,
+        panel + gap,
+    );
+    blit_rgba(
+        &lenia_panel,
+        panel,
+        panel,
+        &mut combined,
+        out_w,
+        panel * 2 + gap * 2,
+    );
+
+    export::save_png(
+        "peterMath_exports/previews/three_system_overview.png",
+        out_w,
+        panel,
+        &combined,
+    )
+}
+
+fn rendered_panel_life(sim: &LifeSim, panel: usize) -> Vec<u8> {
+    let (w, h) = sim.size();
+    let mut pixels = vec![0; w * h * 4];
+    sim.render_rgba(RenderStyle::Artistic, &mut pixels);
+    let mut out = upscale_rgba(&pixels, w, h, panel, panel);
+    draw_panel_chrome(&mut out, panel, [94, 197, 255, 255]);
+    out
+}
+
+fn rendered_panel_reaction(sim: &ReactionDiffusionSim, panel: usize) -> Vec<u8> {
+    let (w, h) = sim.size();
+    let mut pixels = vec![0; w * h * 4];
+    sim.render_rgba(RenderStyle::Artistic, &mut pixels);
+    let mut out = upscale_rgba(&pixels, w, h, panel, panel);
+    draw_panel_chrome(&mut out, panel, [216, 240, 139, 255]);
+    out
+}
+
+fn rendered_panel_lenia(sim: &LeniaSim, panel: usize) -> Vec<u8> {
+    let (w, h) = sim.size();
+    let mut pixels = vec![0; w * h * 4];
+    sim.render_rgba(RenderStyle::Artistic, &mut pixels);
+    let mut out = upscale_rgba(&pixels, w, h, panel, panel);
+    draw_panel_chrome(&mut out, panel, [255, 118, 168, 255]);
+    out
+}
+
+fn draw_panel_chrome(target: &mut [u8], target_w: usize, color: [u8; 4]) {
+    let h = target.len() / target_w / 4;
+    fill_rect(target, target_w, 0, 0, target_w, 6, color);
+    fill_rect(target, target_w, 0, h.saturating_sub(6), target_w, 6, color);
+    fill_rect(target, target_w, 0, 0, 6, h, color);
+    fill_rect(target, target_w, target_w.saturating_sub(6), 0, 6, h, color);
 }
 
 fn render_lenia() -> anyhow::Result<()> {

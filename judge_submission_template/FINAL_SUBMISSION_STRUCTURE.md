@@ -20,6 +20,7 @@ Recommended final folder:
 │  └─ 04_judge_mode.png
 ├─ previews/
 │  ├─ lenia_hero.png
+│  ├─ three_system_overview.png
 │  ├─ reaction_diffusion_texture.png
 │  └─ judge_mode_reference.png
 └─ data_exports/
@@ -31,4 +32,4 @@ Recommended final folder:
 
 Do not submit only the source code. Judges should receive the executable plus explanation, preview images, and evidence exports. Include `web_html/` as a fallback only; the native executable remains the primary work.
 
-The final explanation should describe only features that are actually implemented in the submitted `peterMath.exe`: GPU Lenia, CPU fallback, Raw/Artistic views, inspector, kernel lens, metrics, active-region analysis, Game of Life pattern detection, Lenia rule variant comparison, performance diagnostics, evidence exports, Reaction-Diffusion, Game of Life, and RLE import/export.
+The final explanation should describe only features that are actually implemented in the submitted `peterMath.exe`: Chinese three-system overview, GPU Lenia, CPU fallback, 数学原始图/艺术表达图, inspector, kernel lens, metrics, active-region analysis, Game of Life pattern detection, Lenia rule variant comparison, performance diagnostics, evidence exports, Reaction-Diffusion, Game of Life, and RLE import/export.

@@ -223,7 +223,7 @@ impl LifeSim {
             random_density: 0.18,
             seed,
         };
-        sim.reset_preset("symmetric_seed");
+        sim.reset_preset("structure_showcase");
         sim
     }
 
@@ -237,9 +237,14 @@ impl LifeSim {
         self.age.fill(0.0);
         self.previous_age.fill(0.0);
         match preset {
+            "structure_showcase" => self.seed_structure_showcase(),
             "symmetric_seed" => self.seed_symmetric(),
+            "glider" => self.seed_glider_showcase(),
+            "oscillator" => self.seed_oscillator_showcase(),
+            "random_soup" => self.reset_random(),
             _ => self.reset_random(),
         }
+        self.sync_previous_age();
     }
 
     pub fn clear(&mut self) {
@@ -257,6 +262,7 @@ impl LifeSim {
         for (i, age) in self.age.iter_mut().enumerate() {
             *age = if self.cells.get(i) { 1.0 } else { 0.0 };
         }
+        self.sync_previous_age();
     }
 
     pub fn get_cell(&self, x: usize, y: usize) -> bool {
@@ -295,6 +301,7 @@ impl LifeSim {
                 self.set_cell(tx, ty, true);
             }
         }
+        self.sync_previous_age();
     }
 
     pub fn export_rle(&self) -> String {
@@ -481,6 +488,91 @@ impl LifeSim {
                 self.age[idx] = 1.0;
             }
         }
+    }
+
+    fn seed_structure_showcase(&mut self) {
+        let cx = self.w / 2;
+        let cy = self.h / 2;
+        let patterns: &[&[(isize, isize)]] = &[
+            &[(0, 0), (1, 0), (0, 1), (1, 1)],
+            &[(1, 0), (2, 0), (0, 1), (3, 1), (1, 2), (2, 2)],
+            &[(1, 0), (2, 0), (0, 1), (3, 1), (1, 2), (3, 2), (2, 3)],
+            &[(0, 0), (1, 0), (2, 0)],
+            &[(1, 0), (2, 0), (3, 0), (0, 1), (1, 1), (2, 1)],
+            &[
+                (0, 0),
+                (1, 0),
+                (0, 1),
+                (1, 1),
+                (2, 2),
+                (3, 2),
+                (2, 3),
+                (3, 3),
+            ],
+            &[(1, 0), (2, 1), (0, 2), (1, 2), (2, 2)],
+        ];
+        let anchors = [
+            (-52, -34),
+            (-18, -36),
+            (22, -36),
+            (-54, 4),
+            (-18, 2),
+            (20, 0),
+            (-6, 34),
+        ];
+        for (anchor, pattern) in anchors.iter().zip(patterns.iter()) {
+            self.place_pattern(cx as isize + anchor.0, cy as isize + anchor.1, pattern);
+        }
+    }
+
+    fn seed_glider_showcase(&mut self) {
+        let cx = self.w / 2;
+        let cy = self.h / 2;
+        let glider = &[(1, 0), (2, 1), (0, 2), (1, 2), (2, 2)];
+        for &(x, y) in &[
+            (cx as isize - 42, cy as isize - 34),
+            (cx as isize + 20, cy as isize - 28),
+            (cx as isize - 12, cy as isize + 24),
+        ] {
+            self.place_pattern(x, y, glider);
+        }
+    }
+
+    fn seed_oscillator_showcase(&mut self) {
+        let cx = self.w / 2;
+        let cy = self.h / 2;
+        self.place_pattern(cx as isize - 36, cy as isize - 8, &[(0, 0), (1, 0), (2, 0)]);
+        self.place_pattern(
+            cx as isize - 4,
+            cy as isize - 8,
+            &[(1, 0), (2, 0), (3, 0), (0, 1), (1, 1), (2, 1)],
+        );
+        self.place_pattern(
+            cx as isize + 32,
+            cy as isize - 10,
+            &[
+                (0, 0),
+                (1, 0),
+                (0, 1),
+                (1, 1),
+                (2, 2),
+                (3, 2),
+                (2, 3),
+                (3, 3),
+            ],
+        );
+    }
+
+    fn place_pattern(&mut self, x0: isize, y0: isize, cells: &[(isize, isize)]) {
+        for &(dx, dy) in cells {
+            let idx = wrap_index(x0 + dx, y0 + dy, self.w, self.h);
+            self.cells.set(idx, true);
+            self.age[idx] = 1.0;
+        }
+    }
+
+    pub fn sync_previous_age(&mut self) {
+        self.previous_age.copy_from_slice(&self.age);
     }
 
     pub fn step(&mut self) {
@@ -742,6 +834,36 @@ mod tests {
         sim.step();
         let period = detect_oscillator_period(&[(0, initial)], 2, sim.state_hash());
         assert_eq!(period, Some(2));
+    }
+
+    #[test]
+    fn structure_showcase_contains_all_core_pattern_classes() {
+        let sim = LifeSim::new(160, 160, 3001);
+        let report = sim.detect_known_patterns(&[], 0, None);
+        assert!(report
+            .detections
+            .iter()
+            .any(|detection| detection.pattern == KnownPattern::Block));
+        assert!(report.detections.iter().any(|detection| matches!(
+            detection.pattern,
+            KnownPattern::Blinker | KnownPattern::Toad | KnownPattern::Beacon
+        )));
+        assert!(report
+            .detections
+            .iter()
+            .any(|detection| detection.pattern == KnownPattern::Glider));
+    }
+
+    #[test]
+    fn reset_random_and_import_start_with_synchronized_history() {
+        let mut sim = LifeSim::new(64, 64, 3001);
+        sim.random_density = 0.24;
+        sim.reset_random();
+        assert!(sim.metrics().stability > 0.999);
+
+        let pattern = LifeRlePattern::parse("x = 3, y = 3\nbob$2bo$3o!").expect("valid RLE");
+        sim.apply_rle_centered(&pattern);
+        assert!(sim.metrics().stability > 0.999);
     }
 
     fn assert_detects(rle: &str, expected: KnownPattern) {

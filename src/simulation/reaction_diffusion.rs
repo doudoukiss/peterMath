@@ -35,7 +35,7 @@ impl ReactionDiffusionSim {
             dt: 1.0,
             seed,
         };
-        sim.reset_preset("mitosis");
+        sim.reset_preset("labyrinth");
         sim
     }
 
@@ -58,12 +58,23 @@ impl ReactionDiffusionSim {
                 self.seed_dots(9, 7.0);
             }
             "labyrinth" => {
-                self.feed = 0.029;
-                self.kill = 0.057;
-                self.seed_dots_full(96, 4.2);
+                self.feed = 0.030;
+                self.kill = 0.055;
+                self.seed_dots_full(150, 4.8);
+            }
+            "spots" => {
+                self.feed = 0.022;
+                self.kill = 0.051;
+                self.seed_dots_full(80, 3.8);
+            }
+            "waves" => {
+                self.feed = 0.014;
+                self.kill = 0.047;
+                self.seed_dots_full(54, 5.8);
             }
             _ => self.seed_dots(11, 6.5),
         }
+        self.previous_b.copy_from_slice(&self.b);
     }
 
     fn seed_dots(&mut self, count: usize, radius: f32) {
@@ -160,5 +171,34 @@ impl ReactionDiffusionSim {
 
     pub fn metrics(&self) -> Metrics {
         Metrics::from_scalar_grid(&self.b, Some(&self.previous_b), self.w, self.h)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_labyrinth_changes_over_time() {
+        let mut sim = ReactionDiffusionSim::new(96, 96, 2001);
+        let initial = sim.metrics();
+        let mut checkpoints = Vec::new();
+        for step in 1..=900 {
+            sim.step();
+            if matches!(step, 50 | 300 | 900) {
+                checkpoints.push(sim.metrics());
+            }
+        }
+
+        assert_eq!(checkpoints.len(), 3);
+        for metrics in checkpoints {
+            let delta = (metrics.mass - initial.mass).abs()
+                + (metrics.entropy - initial.entropy).abs()
+                + (metrics.active as f32 - initial.active as f32).abs() / 10_000.0;
+            assert!(
+                delta > 0.002,
+                "reaction-diffusion checkpoint did not visibly diverge: {delta}"
+            );
+        }
     }
 }
