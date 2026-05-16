@@ -25,8 +25,17 @@ jobs:
       - name: Format check
         run: cargo fmt --all -- --check
 
+      - name: Test
+        run: cargo test
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
       - name: Build release
         run: cargo build --release
+
+      - name: Generate preview images
+        run: cargo run --bin render_preview
 
       - name: Prepare artifact folder
         shell: pwsh
@@ -34,11 +43,20 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist\peterMath_windows_submission | Out-Null
           Copy-Item target\release\peterMath.exe dist\peterMath_windows_submission\peterMath.exe
           Copy-Item README.md dist\peterMath_windows_submission\README_PROJECT.md
+          if (Test-Path assets) {
+            Copy-Item assets dist\peterMath_windows_submission\assets -Recurse -Force
+          }
           if (Test-Path judge_submission_template) {
             Copy-Item judge_submission_template\* dist\peterMath_windows_submission\ -Recurse -Force
           }
           if (Test-Path web_html) {
             Copy-Item web_html dist\peterMath_windows_submission\web_html -Recurse -Force
+          }
+          if (Test-Path screenshots) {
+            Copy-Item screenshots dist\peterMath_windows_submission\screenshots -Recurse -Force
+          }
+          if (Test-Path peterMath_exports\previews) {
+            Copy-Item peterMath_exports\previews dist\peterMath_windows_submission\previews -Recurse -Force
           }
 
       - name: Upload Windows artifact

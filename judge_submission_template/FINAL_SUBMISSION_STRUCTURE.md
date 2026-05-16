@@ -18,11 +18,17 @@ Recommended final folder:
 │  ├─ 02_lenia_artistic.png
 │  ├─ 03_reaction_diffusion.png
 │  └─ 04_judge_mode.png
+├─ previews/
+│  ├─ lenia_hero.png
+│  ├─ reaction_diffusion_texture.png
+│  └─ judge_mode_reference.png
 └─ data_exports/
    ├─ experiment_001_parameters.json
-   └─ experiment_001_snapshot.png
+   ├─ experiment_001_snapshot.png
+   ├─ peterMath_share_state.json
+   └─ SUMMARY.md
 ```
 
-Do not submit only the source code. Judges should receive the executable plus explanation and evidence. Include `web_html/` as a fallback only; the native executable remains the primary work.
+Do not submit only the source code. Judges should receive the executable plus explanation, preview images, and evidence exports. Include `web_html/` as a fallback only; the native executable remains the primary work.
 
-The final explanation should describe only features that are actually implemented in the submitted `peterMath.exe`. If Physarum or GPU compute are still incomplete, keep them out of the student-facing claims and focus on the strongest finished Lenia, Reaction-Diffusion, Game of Life, metrics, and export evidence.
+The final explanation should describe only features that are actually implemented in the submitted `peterMath.exe`: GPU Lenia, CPU fallback, Raw/Artistic views, inspector, kernel lens, metrics, performance diagnostics, evidence exports, Reaction-Diffusion, Game of Life, and RLE import/export.

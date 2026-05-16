@@ -2,7 +2,7 @@ use crate::export;
 use crate::gpu::{self, GpuLeniaArt, GpuLeniaParams};
 use crate::metrics::Metrics;
 use crate::simulation::lenia::{LeniaInspection, LeniaSim, LeniaState};
-use crate::simulation::life::LifeSim;
+use crate::simulation::life::{LifeRlePattern, LifeSim};
 use crate::simulation::reaction_diffusion::ReactionDiffusionSim;
 use crate::simulation::{RenderStyle, SimMode};
 use egui::{Color32, ColorImage, TextureHandle, TextureOptions};
@@ -49,6 +49,8 @@ pub struct PeterMathApp {
     step_count: u64,
     pixels: Vec<u8>,
     texture: Option<TextureHandle>,
+    life_rle_input: String,
+    life_rle_output: String,
     status: String,
     last_tick: Instant,
 }
@@ -409,6 +411,8 @@ impl PeterMathApp {
             step_count: 0,
             pixels: vec![0; width * width * 4],
             texture: None,
+            life_rle_input: "x = 3, y = 3, rule = B3/S23\nbob$2bo$3o!\n".to_owned(),
+            life_rle_output: String::new(),
             status: if gpu_ready {
                 "GPU Lenia is active. Tune one rule and watch form, motion, and metrics agree."
                     .to_owned()
@@ -530,6 +534,7 @@ impl PeterMathApp {
     }
 
     fn export_snapshot(&mut self) {
+        self.update_performance_metadata();
         if self.gpu_lenia_active() {
             self.export_gpu_lenia_snapshot();
             return;
@@ -570,6 +575,7 @@ impl PeterMathApp {
     }
 
     fn export_gpu_lenia_snapshot(&mut self) {
+        self.update_performance_metadata();
         let Some(gpu) = &self.gpu_lenia else {
             self.status = "GPU export failed: GPU Lenia is unavailable.".to_owned();
             return;
@@ -607,6 +613,93 @@ impl PeterMathApp {
         self.status = match result {
             Ok(()) => format!("Exported {} and {}", png_path, json_path),
             Err(err) => format!("GPU export failed: {err}"),
+        };
+    }
+
+    fn export_share_state(&mut self) {
+        self.update_performance_metadata();
+        let (w, h) = self.active_size();
+        let metrics = self.active_metrics();
+        let result = export::save_share_state(
+            "peterMath_share_state.json",
+            export::ShareStateExport {
+                mode: self.mode.label(),
+                render_style: self.render_style.label(),
+                backend: self.backend_label(),
+                seed: self.active_seed(),
+                step_count: self.step_count,
+                grid_width: w,
+                grid_height: h,
+                parameters: self.parameter_json(),
+                metrics,
+            },
+        );
+        self.status = match result {
+            Ok(()) => "Exported peterMath_share_state.json.".to_owned(),
+            Err(err) => format!("Share-state export failed: {err}"),
+        };
+    }
+
+    fn export_evidence_pack(&mut self) {
+        self.update_performance_metadata();
+        let stem = format!(
+            "peterMath_{}_seed{}_step{}",
+            self.mode.label().replace([' ', '-'], "_"),
+            self.active_seed(),
+            self.step_count
+        );
+        let dir = format!(
+            "peterMath_exports/evidence_seed{}_step{}",
+            self.active_seed(),
+            self.step_count
+        );
+
+        let result = (|| -> anyhow::Result<export::EvidencePack> {
+            let (w, h, pixels, metrics) = if self.gpu_lenia_active() {
+                let gpu = self
+                    .gpu_lenia
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("GPU Lenia is unavailable"))?;
+                let (size, field, previous) = gpu.read_fields_blocking()?;
+                let mut pixels = vec![0; size * size * 4];
+                gpu::colorize_fields(&field, &previous, size, self.render_style, &mut pixels);
+                let metrics = Metrics::from_scalar_grid(&field, Some(&previous), size, size);
+                (size, size, pixels, metrics)
+            } else {
+                let (w, h) = self.render_active();
+                (w, h, self.pixels.clone(), self.active_metrics())
+            };
+
+            export::create_evidence_pack(
+                &dir,
+                &stem,
+                w,
+                h,
+                &pixels,
+                export::ShareStateExport {
+                    mode: self.mode.label(),
+                    render_style: self.render_style.label(),
+                    backend: self.backend_label(),
+                    seed: self.active_seed(),
+                    step_count: self.step_count,
+                    grid_width: w,
+                    grid_height: h,
+                    parameters: self.parameter_json(),
+                    metrics,
+                },
+            )
+        })();
+
+        self.status = match result {
+            Ok(pack) => format!(
+                "Exported evidence pack: {} (PNG {}, JSON {}, share {}, summary {})",
+                pack.dir.display(),
+                pack.snapshot_png.display(),
+                pack.parameters_json.display(),
+                pack.share_state_json.display(),
+                pack.summary_md.display()
+            ),
+            Err(err) => format!("Evidence pack export failed: {err}"),
         };
     }
 
@@ -893,6 +986,32 @@ impl PeterMathApp {
         self.status = format!("Loaded deterministic Lenia seed {next_seed}.");
     }
 
+    fn import_life_rle(&mut self) {
+        match LifeRlePattern::parse(&self.life_rle_input) {
+            Ok(pattern) => {
+                self.life.apply_rle_centered(&pattern);
+                self.step_count = 0;
+                self.texture = None;
+                self.mark_cpu_texture_dirty();
+                self.reset_metric_history();
+                self.status = format!(
+                    "Imported Game of Life RLE pattern {}x{} with {} live cells.",
+                    pattern.width,
+                    pattern.height,
+                    pattern.cells.len()
+                );
+            }
+            Err(err) => {
+                self.status = format!("RLE import failed: {err}");
+            }
+        }
+    }
+
+    fn export_life_rle(&mut self) {
+        self.life_rle_output = self.life.export_rle();
+        self.status = "Exported current Game of Life active bounding box as RLE.".to_owned();
+    }
+
     fn apply_lenia_brush(&mut self, rect: egui::Rect, response: &egui::Response) {
         if self.mode != SimMode::Lenia {
             return;
@@ -1077,6 +1196,7 @@ impl PeterMathApp {
     fn parameter_json(&self) -> serde_json::Value {
         match self.mode {
             SimMode::Lenia => json!({
+                "schema_version": export::SCHEMA_VERSION,
                 "kernel_radius": self.lenia.radius,
                 "growth_center": self.lenia.growth_center,
                 "growth_width": self.lenia.growth_width,
@@ -1100,15 +1220,20 @@ impl PeterMathApp {
                 },
             }),
             SimMode::ReactionDiffusion => json!({
+                "schema_version": export::SCHEMA_VERSION,
                 "feed": self.reaction.feed,
                 "kill": self.reaction.kill,
                 "diffusion_a": self.reaction.diff_a,
                 "diffusion_b": self.reaction.diff_b,
                 "time_step": self.reaction.dt,
+                "performance": self.performance_json(),
             }),
             SimMode::GameOfLife => json!({
+                "schema_version": export::SCHEMA_VERSION,
                 "rule": "B3/S23",
                 "seed_density": self.life.random_density,
+                "rle_export": self.life.export_rle(),
+                "performance": self.performance_json(),
             }),
         }
     }
@@ -1280,6 +1405,14 @@ impl PeterMathApp {
         if ui.button("Export snapshot + parameters").clicked() {
             self.export_snapshot();
         }
+        ui.horizontal(|ui| {
+            if ui.button("Export share state").clicked() {
+                self.export_share_state();
+            }
+            if ui.button("Evidence pack").clicked() {
+                self.export_evidence_pack();
+            }
+        });
 
         ui.separator();
         ui.label(format!("Mode: {}", self.mode.label()));
@@ -1377,6 +1510,31 @@ impl PeterMathApp {
                     self.mark_cpu_texture_dirty();
                 }
                 ui.label("Rule B3/S23: birth with 3 neighbors; survival with 2 or 3 neighbors.");
+                ui.separator();
+                ui.heading("RLE Pattern");
+                ui.small("Import/export applies only to the discrete Game of Life mode.");
+                ui.label("Import RLE");
+                ui.add(
+                    egui::TextEdit::multiline(&mut self.life_rle_input)
+                        .desired_rows(5)
+                        .code_editor(),
+                );
+                ui.horizontal(|ui| {
+                    if ui.button("Import RLE").clicked() {
+                        self.import_life_rle();
+                    }
+                    if ui.button("Export RLE").clicked() {
+                        self.export_life_rle();
+                    }
+                });
+                if !self.life_rle_output.is_empty() {
+                    ui.label("Exported RLE");
+                    ui.add(
+                        egui::TextEdit::multiline(&mut self.life_rle_output)
+                            .desired_rows(5)
+                            .code_editor(),
+                    );
+                }
             }
         }
 

@@ -3,6 +3,7 @@
 # Local run/export artifacts
 peterMath_*_snapshot.png
 peterMath_*_parameters.json
+peterMath_share_state.json
 peterMath_exports/
 dist/
 

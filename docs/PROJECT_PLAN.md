@@ -2,48 +2,55 @@
 
 ## Repository Structure
 
-This folder, `peterMath/`, is the Git repository root for the competition app.
+This folder, `peterMath/`, is the Git repository root for the competition app. The outer `peterMath_pack/` folder is only a planning/archive workspace.
 
 ```text
 peterMath/
 ├─ Cargo.toml
-├─ Cargo.lock
 ├─ README.md
-├─ .gitignore
 ├─ .github/workflows/windows-release.yml
 ├─ assets/
 ├─ docs/
 ├─ judge_submission_template/
+├─ screenshots/
 ├─ web_html/
 └─ src/
 ```
 
-The outer `peterMath_pack/` folder is a planning/archive workspace. It should not be the main repository root.
-
 ## Competition Objective
 
-Build `peterMath` into a Windows-runnable mathematical life-system laboratory:
+Build `peterMath` into a Windows-runnable mathematical artwork and evidence lab:
 
 ```text
-rules + fields + parameters + deterministic seeds + metrics + exportable evidence
+living field + deterministic seed + adjustable rule + inspector + metrics + exportable evidence
 ```
 
-The app should be judged as mathematical engineering software, not as decorative animation.
+The judging story is native-first. The app should persuade through mathematical beauty, not decorative animation.
 
-## Immediate Next Steps
+## Current Implemented Direction
 
-1. Run `cargo fmt` and commit a formatted baseline.
-2. Run `cargo test` and `cargo run --release`; fix any build or runtime issues.
-3. Push this folder to a GitHub repo named `peterMath`.
-4. Run the Windows GitHub Actions workflow and confirm `peterMath-windows-x64` contains `peterMath.exe` and `web_html/index.html`.
-5. Improve Lenia first: stronger presets, finer visual field, clearer kernel/growth explanation.
-6. Improve Reaction-Diffusion second: feed/kill presets, Raw Math View, contour-like Artistic View.
-7. Turn Judge Mode into a guided 3-minute flow with before/after metric comparison.
-8. Add experiment logging and submission snapshot export.
-9. Add Physarum only after the first two systems and Judge Mode are solid.
-10. Record screenshots and a 3-minute video from the final Windows build.
+- Primary artwork: GPU Lenia living field, with CPU reference fallback.
+- Secondary systems: Reaction-Diffusion and Game of Life.
+- Interaction: draw, erase, stamps, presets, density randomization, undo/redo, keyboard shortcuts.
+- Explanation: field inspector, kernel lens, phase labels, metric history, Judge Mode guide.
+- Performance: diagnostics, bounded scheduler, CPU texture dirty tracking, `perf_probe`.
+- Shareability: PNG/JSON snapshot export, share-state JSON, evidence packs, Game of Life RLE import/export, and offline web fallback.
 
-Use `cargo run --bin render_preview` after visual changes to produce still images for review.
+## Final Submission Checklist
+
+1. Run all validation commands from the repository root.
+2. Generate previews with `cargo run --bin render_preview`.
+3. Create at least one Lenia evidence pack from the native app.
+4. Confirm `web_html/index.html` opens directly from disk and hash sharing works.
+5. Push to GitHub and run the Windows release workflow.
+6. Download `peterMath-windows-x64` and confirm it contains:
+   - `peterMath.exe`
+   - judge templates
+   - web fallback
+   - assets
+   - generated previews
+   - screenshot guidance
+7. Record or prepare a three-minute demonstration using Judge Mode.
 
 ## Working Rule
 
@@ -52,6 +59,6 @@ Do not add features that weaken the judging story. Every visible feature should 
 - The pattern comes from a mathematical rule.
 - The rule has adjustable parameters.
 - The same seed and parameters reproduce the same result.
+- Raw and Artistic views share the same data.
 - Metrics and exports provide evidence.
-- The final program runs on Windows without developer tools.
-- If the executable cannot run on a judge machine, the static web fallback can still demonstrate the rule-driven animation.
+- If the executable fails on a judge machine, the static web fallback still demonstrates rule-driven pattern formation.

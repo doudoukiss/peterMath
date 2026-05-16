@@ -20,22 +20,20 @@
     body {
       margin: 0;
       min-height: 100vh;
-      background:
-        linear-gradient(180deg, rgba(33, 48, 54, 0.92), rgba(11, 15, 18, 0.98) 36%),
-        #0b0f12;
+      background: #0b0f12;
     }
 
     .shell {
       display: grid;
-      grid-template-columns: 260px minmax(360px, 1fr) 300px;
+      grid-template-columns: 270px minmax(360px, 1fr) 310px;
       min-height: 100vh;
     }
 
     aside {
+      padding: 18px;
+      background: #0e1518;
       border-color: rgba(231, 237, 241, 0.12);
       border-style: solid;
-      padding: 18px;
-      background: rgba(12, 17, 20, 0.74);
     }
 
     .left {
@@ -48,8 +46,9 @@
 
     main {
       display: grid;
-      grid-template-rows: auto 1fr;
+      grid-template-rows: auto 1fr auto;
       min-width: 0;
+      background: #070a0c;
     }
 
     .topbar {
@@ -85,6 +84,13 @@
       border: 1px solid rgba(231, 237, 241, 0.16);
       background: #050708;
       box-shadow: 0 18px 48px rgba(0, 0, 0, 0.42);
+    }
+
+    .caption {
+      padding: 0 18px 16px;
+      color: #93a7af;
+      font-size: 12px;
+      text-align: center;
     }
 
     h1,
@@ -183,7 +189,7 @@
       display: block;
       height: 100%;
       width: 0%;
-      background: linear-gradient(90deg, #78c8b2, #d2ec71);
+      background: linear-gradient(90deg, #78c8b2, #d8f08b);
     }
 
     .rule {
@@ -197,17 +203,21 @@
       line-height: 1.55;
     }
 
+    .status {
+      min-height: 18px;
+      color: #8edacb;
+      font-size: 12px;
+    }
+
     @media (max-width: 980px) {
       .shell {
         grid-template-columns: 1fr;
       }
 
-      aside {
-        border-width: 0 0 1px 0;
-      }
-
+      aside,
+      .left,
       .right {
-        border-width: 1px 0 0 0;
+        border-width: 0 0 1px 0;
       }
 
       canvas {
@@ -220,9 +230,9 @@
   <div class="shell">
     <aside class="left">
       <h1>peterMath</h1>
-      <p>Web fallback window for the mathematical life-system lab.</p>
+      <p>Offline web fallback for the native mathematical artwork. The executable remains the primary competition artifact.</p>
 
-      <h2>System</h2>
+      <h2>Preset</h2>
       <select id="preset">
         <option value="labyrinth">Reaction-Diffusion: labyrinth</option>
         <option value="spots">Reaction-Diffusion: spots</option>
@@ -245,19 +255,26 @@
         <input id="steps" type="range" min="1" max="12" step="1" value="4">
       </label>
 
-      <p>This fallback opens directly from disk. The native executable remains the primary submission.</p>
+      <h2>Share</h2>
+      <div class="button-row">
+        <button id="copyLink" type="button">Copy share link</button>
+        <button id="exportSnapshot" type="button">Export snapshot</button>
+      </div>
+      <p class="status" id="status">Hash links preserve seed, parameters, preset, and view.</p>
     </aside>
 
     <main>
       <div class="topbar">
         <span class="brand">peterMath</span>
-        <span>mode: Gray-Scott reaction-diffusion</span>
+        <span>fallback: Gray-Scott reaction-diffusion</span>
         <span>seed: <strong id="seedLabel">4101</strong></span>
         <span>step: <strong id="stepLabel">0</strong></span>
+        <span>style: <strong id="styleLabel">artistic</strong></span>
       </div>
       <div class="stage">
         <canvas id="field" width="220" height="220"></canvas>
       </div>
+      <div class="caption">Same judging story: deterministic seed, adjustable rule, raw/artistic views, and live metrics.</div>
     </main>
 
     <aside class="right">
@@ -315,6 +332,7 @@
     let running = true;
     let stepCount = 0;
     let seed = 4101;
+    let suppressHash = false;
 
     const presets = {
       labyrinth: { seed: 4101, feed: 0.036, kill: 0.060, diffA: 1.00, diffB: 0.50 },
@@ -327,6 +345,9 @@
       viewMode: document.getElementById("viewMode"),
       runButton: document.getElementById("runButton"),
       resetButton: document.getElementById("resetButton"),
+      copyLink: document.getElementById("copyLink"),
+      exportSnapshot: document.getElementById("exportSnapshot"),
+      status: document.getElementById("status"),
       steps: document.getElementById("steps"),
       stepsValue: document.getElementById("stepsValue"),
       feed: document.getElementById("feed"),
@@ -339,6 +360,7 @@
       diffBValue: document.getElementById("diffBValue"),
       seedLabel: document.getElementById("seedLabel"),
       stepLabel: document.getElementById("stepLabel"),
+      styleLabel: document.getElementById("styleLabel"),
       activityText: document.getElementById("activityText"),
       activityBar: document.getElementById("activityBar"),
       contrastText: document.getElementById("contrastText"),
@@ -363,8 +385,9 @@
       return yy * size + xx;
     }
 
-    function applyPreset(name) {
-      const p = presets[name];
+    function applyPreset(name, keepHash) {
+      const p = presets[name] || presets.labyrinth;
+      ui.preset.value = presets[name] ? name : "labyrinth";
       seed = p.seed;
       ui.feed.value = p.feed;
       ui.kill.value = p.kill;
@@ -372,6 +395,7 @@
       ui.diffB.value = p.diffB;
       resetField();
       syncLabels();
+      if (!keepHash) updateHash();
     }
 
     function resetField() {
@@ -460,6 +484,7 @@
       updateMetrics(mass / total, Math.sqrt(Math.max(0, sumSq / total - (sum / total) ** 2)) * 3, 1 - mirrorError / total);
       ui.stepLabel.textContent = String(stepCount);
       ui.seedLabel.textContent = String(seed);
+      ui.styleLabel.textContent = ui.viewMode.value;
     }
 
     function updateMetrics(activity, contrast, symmetry) {
@@ -482,6 +507,59 @@
       ui.diffBValue.textContent = Number(ui.diffB.value).toFixed(2);
     }
 
+    function currentHash() {
+      const p = new URLSearchParams();
+      p.set("preset", ui.preset.value);
+      p.set("seed", String(seed));
+      p.set("feed", Number(ui.feed.value).toFixed(3));
+      p.set("kill", Number(ui.kill.value).toFixed(3));
+      p.set("diffA", Number(ui.diffA.value).toFixed(2));
+      p.set("diffB", Number(ui.diffB.value).toFixed(2));
+      p.set("style", ui.viewMode.value);
+      p.set("steps", ui.steps.value);
+      return p.toString();
+    }
+
+    function updateHash() {
+      if (suppressHash) return;
+      history.replaceState(null, "", `#${currentHash()}`);
+    }
+
+    function restoreHash() {
+      const params = new URLSearchParams(location.hash.replace(/^#/, ""));
+      const preset = params.get("preset") || "labyrinth";
+      suppressHash = true;
+      applyPreset(preset, true);
+      if (params.has("seed")) seed = Number(params.get("seed")) || seed;
+      for (const [key, element] of [["feed", ui.feed], ["kill", ui.kill], ["diffA", ui.diffA], ["diffB", ui.diffB], ["steps", ui.steps]]) {
+        if (params.has(key)) element.value = params.get(key);
+      }
+      if (params.has("style")) ui.viewMode.value = params.get("style");
+      resetField();
+      syncLabels();
+      render();
+      suppressHash = false;
+      updateHash();
+    }
+
+    async function copyShareLink() {
+      const url = `${location.href.split("#")[0]}#${currentHash()}`;
+      try {
+        await navigator.clipboard.writeText(url);
+        ui.status.textContent = "Share link copied.";
+      } catch {
+        ui.status.textContent = url;
+      }
+    }
+
+    function exportSnapshot() {
+      const link = document.createElement("a");
+      link.download = `peterMath_web_seed${seed}_step${stepCount}.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+      ui.status.textContent = "Snapshot exported from the web fallback.";
+    }
+
     function frame() {
       syncLabels();
       if (running) {
@@ -496,15 +574,26 @@
       running = !running;
       ui.runButton.textContent = running ? "Pause" : "Run";
     });
-    ui.resetButton.addEventListener("click", resetField);
+    ui.resetButton.addEventListener("click", () => {
+      resetField();
+      updateHash();
+    });
+    ui.copyLink.addEventListener("click", copyShareLink);
+    ui.exportSnapshot.addEventListener("click", exportSnapshot);
     ui.preset.addEventListener("change", () => applyPreset(ui.preset.value));
-    ui.viewMode.addEventListener("change", render);
+    ui.viewMode.addEventListener("change", () => {
+      render();
+      updateHash();
+    });
 
     for (const input of [ui.steps, ui.feed, ui.kill, ui.diffA, ui.diffB]) {
-      input.addEventListener("input", syncLabels);
+      input.addEventListener("input", () => {
+        syncLabels();
+        updateHash();
+      });
     }
 
-    applyPreset("labyrinth");
+    restoreHash();
     frame();
   </script>
 </body>

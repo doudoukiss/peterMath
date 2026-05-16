@@ -1,4 +1,5 @@
-experiment_id,mode,preset,seed,changed_parameter,before_value,after_value,steps,mass,entropy,symmetry,stability,vitality,student_observation
-001,Lenia-like field,Orbital Field,1001,growth_center,0.33,0.36,100,,,,,,
-002,Reaction-Diffusion,Mitosis,2001,feed,0.0367,0.042,300,,,,,,
-003,Game of Life,Symmetric Seed,3001,rule,B3/S23,B3/S23,100,,,,,,
+experiment_id,mode,preset,seed,changed_parameter,before_value,after_value,steps,mass,entropy,symmetry,stability,vitality,phase,evidence_pack,student_observation
+001,Lenia-like field,Orbital Field,1001,growth_center,0.31,0.36,100,,,,,,,,
+002,Lenia-like field,Kernel Ring,1001,kernel_radius,14,18,120,,,,,,,,
+003,Reaction-Diffusion,Labyrinth,2001,feed,0.036,0.042,300,,,,,,,,
+004,Game of Life,RLE import,3001,pattern,glider,pulsar,100,,,,,,,,
