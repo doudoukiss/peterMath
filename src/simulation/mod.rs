@@ -12,9 +12,9 @@ pub enum SimMode {
 impl SimMode {
     pub fn label(self) -> &'static str {
         match self {
-            SimMode::Lenia => "Lenia-like field",
-            SimMode::ReactionDiffusion => "Reaction-Diffusion",
-            SimMode::GameOfLife => "Game of Life",
+            SimMode::Lenia => "连续生命场 Lenia",
+            SimMode::ReactionDiffusion => "反应扩散 Reaction-Diffusion",
+            SimMode::GameOfLife => "生命游戏 Game of Life",
         }
     }
 }
@@ -28,8 +28,8 @@ pub enum RenderStyle {
 impl RenderStyle {
     pub fn label(self) -> &'static str {
         match self {
-            RenderStyle::RawMath => "Raw Math View",
-            RenderStyle::Artistic => "Artistic View",
+            RenderStyle::RawMath => "数学原始图",
+            RenderStyle::Artistic => "艺术表达图",
         }
     }
 }

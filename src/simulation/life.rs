@@ -43,21 +43,21 @@ pub struct LifeStateHash(pub u64);
 impl KnownPattern {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Block => "block",
-            Self::Beehive => "beehive",
-            Self::Loaf => "loaf",
-            Self::Blinker => "blinker",
-            Self::Toad => "toad",
-            Self::Beacon => "beacon",
-            Self::Glider => "glider",
+            Self::Block => "方块",
+            Self::Beehive => "蜂巢",
+            Self::Loaf => "面包",
+            Self::Blinker => "闪烁器",
+            Self::Toad => "蟾蜍",
+            Self::Beacon => "信标",
+            Self::Glider => "滑翔机",
         }
     }
 
     pub fn kind(self) -> &'static str {
         match self {
-            Self::Block | Self::Beehive | Self::Loaf => "still life",
-            Self::Blinker | Self::Toad | Self::Beacon => "oscillator",
-            Self::Glider => "spaceship",
+            Self::Block | Self::Beehive | Self::Loaf => "静物",
+            Self::Blinker | Self::Toad | Self::Beacon => "振荡器",
+            Self::Glider => "飞船",
         }
     }
 }
