@@ -1,13 +1,15 @@
 use crate::export;
 use crate::gpu::{self, GpuLeniaArt, GpuLeniaParams};
 use crate::metrics::Metrics;
-use crate::simulation::lenia::LeniaSim;
+use crate::simulation::lenia::{LeniaSim, LeniaState};
 use crate::simulation::life::LifeSim;
 use crate::simulation::reaction_diffusion::ReactionDiffusionSim;
 use crate::simulation::{RenderStyle, SimMode};
 use egui::{Color32, ColorImage, TextureHandle, TextureOptions};
 use serde_json::json;
 use std::time::{Duration, Instant};
+
+const HISTORY_LIMIT: usize = 32;
 
 pub struct PeterMathApp {
     mode: SimMode,
@@ -19,9 +21,16 @@ pub struct PeterMathApp {
     prefer_gpu_lenia: bool,
     running: bool,
     judge_mode: bool,
-    brush_mode: BrushMode,
+    tool: InteractionTool,
+    active_preset: LeniaPreset,
+    active_stamp: LeniaStamp,
+    grid_profile: GridProfile,
+    random_density: f32,
     brush_radius: f32,
     brush_strength: f32,
+    undo_stack: Vec<LeniaHistorySnapshot>,
+    redo_stack: Vec<LeniaHistorySnapshot>,
+    pointer_edit_active: bool,
     steps_per_frame: usize,
     step_count: u64,
     pixels: Vec<u8>,
@@ -31,9 +40,151 @@ pub struct PeterMathApp {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum BrushMode {
+enum InteractionTool {
     Draw,
     Erase,
+    Stamp,
+    Pan,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LeniaPreset {
+    OrbitalField,
+    TwinOrganisms,
+    CoralDrift,
+    KernelRing,
+    SparseSoup,
+    DenseBloom,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LeniaStamp {
+    SoftCell,
+    RingSeed,
+    TwinSeed,
+    ArcSeed,
+    NoisePatch,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GridProfile {
+    Reference192,
+    Detail256,
+    GpuPreview512,
+}
+
+#[derive(Clone)]
+struct LeniaHistorySnapshot {
+    state: LeniaState,
+    step_count: u64,
+    active_preset: LeniaPreset,
+    grid_profile: GridProfile,
+    random_density: f32,
+}
+
+impl InteractionTool {
+    const ALL: [Self; 4] = [Self::Draw, Self::Erase, Self::Stamp, Self::Pan];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Draw => "Draw",
+            Self::Erase => "Erase",
+            Self::Stamp => "Stamp",
+            Self::Pan => "Pan",
+        }
+    }
+
+    fn id(self) -> &'static str {
+        match self {
+            Self::Draw => "draw",
+            Self::Erase => "erase",
+            Self::Stamp => "stamp",
+            Self::Pan => "pan",
+        }
+    }
+}
+
+impl LeniaPreset {
+    const ALL: [Self; 6] = [
+        Self::OrbitalField,
+        Self::TwinOrganisms,
+        Self::CoralDrift,
+        Self::KernelRing,
+        Self::SparseSoup,
+        Self::DenseBloom,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::OrbitalField => "Orbital Field",
+            Self::TwinOrganisms => "Twin Organisms",
+            Self::CoralDrift => "Coral Drift",
+            Self::KernelRing => "Kernel Ring",
+            Self::SparseSoup => "Sparse Soup",
+            Self::DenseBloom => "Dense Bloom",
+        }
+    }
+
+    fn id(self) -> &'static str {
+        match self {
+            Self::OrbitalField => "orbital_field",
+            Self::TwinOrganisms => "twin_organisms",
+            Self::CoralDrift => "coral_drift",
+            Self::KernelRing => "kernel_ring",
+            Self::SparseSoup => "sparse_soup",
+            Self::DenseBloom => "dense_bloom",
+        }
+    }
+}
+
+impl LeniaStamp {
+    const ALL: [Self; 5] = [
+        Self::SoftCell,
+        Self::RingSeed,
+        Self::TwinSeed,
+        Self::ArcSeed,
+        Self::NoisePatch,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::SoftCell => "Soft Cell",
+            Self::RingSeed => "Ring Seed",
+            Self::TwinSeed => "Twin Seed",
+            Self::ArcSeed => "Arc Seed",
+            Self::NoisePatch => "Noise Patch",
+        }
+    }
+
+    fn id(self) -> &'static str {
+        match self {
+            Self::SoftCell => "soft_cell",
+            Self::RingSeed => "ring_seed",
+            Self::TwinSeed => "twin_seed",
+            Self::ArcSeed => "arc_seed",
+            Self::NoisePatch => "noise_patch",
+        }
+    }
+}
+
+impl GridProfile {
+    const ALL: [Self; 3] = [Self::Reference192, Self::Detail256, Self::GpuPreview512];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Reference192 => "192 reference",
+            Self::Detail256 => "256 detail",
+            Self::GpuPreview512 => "512 GPU preview",
+        }
+    }
+
+    fn size(self) -> usize {
+        match self {
+            Self::Reference192 => 192,
+            Self::Detail256 => 256,
+            Self::GpuPreview512 => 512,
+        }
+    }
 }
 
 impl PeterMathApp {
@@ -65,9 +216,16 @@ impl PeterMathApp {
             prefer_gpu_lenia: gpu_ready,
             running: true,
             judge_mode: false,
-            brush_mode: BrushMode::Draw,
+            tool: InteractionTool::Draw,
+            active_preset: LeniaPreset::OrbitalField,
+            active_stamp: LeniaStamp::SoftCell,
+            grid_profile: GridProfile::Reference192,
+            random_density: 0.24,
             brush_radius: 9.0,
             brush_strength: 0.42,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
+            pointer_edit_active: false,
             steps_per_frame: 1,
             step_count: 0,
             pixels: vec![0; width * width * 4],
@@ -115,7 +273,7 @@ impl PeterMathApp {
         self.step_count = 0;
         match self.mode {
             SimMode::Lenia => {
-                self.lenia.reset_preset("orbital_field");
+                self.lenia.reset_preset(self.active_preset.id());
                 self.sync_gpu_lenia_from_cpu();
             }
             SimMode::ReactionDiffusion => self.reaction.reset_preset("mitosis"),
@@ -255,21 +413,218 @@ impl PeterMathApp {
         }
     }
 
+    fn capture_lenia_history(&self) -> LeniaHistorySnapshot {
+        LeniaHistorySnapshot {
+            state: self.lenia.snapshot(),
+            step_count: self.step_count,
+            active_preset: self.active_preset,
+            grid_profile: self.grid_profile,
+            random_density: self.random_density,
+        }
+    }
+
+    fn push_lenia_history(&mut self) {
+        if self.mode != SimMode::Lenia {
+            return;
+        }
+        self.undo_stack.push(self.capture_lenia_history());
+        if self.undo_stack.len() > HISTORY_LIMIT {
+            self.undo_stack.remove(0);
+        }
+        self.redo_stack.clear();
+    }
+
+    fn restore_lenia_history(&mut self, snapshot: LeniaHistorySnapshot) {
+        self.lenia.restore(&snapshot.state);
+        self.step_count = snapshot.step_count;
+        self.active_preset = snapshot.active_preset;
+        self.grid_profile = snapshot.grid_profile;
+        self.random_density = snapshot.random_density;
+        self.texture = None;
+        self.sync_gpu_lenia_from_cpu();
+    }
+
+    fn undo_lenia(&mut self) {
+        let Some(snapshot) = self.undo_stack.pop() else {
+            self.status = "Nothing to undo.".to_owned();
+            return;
+        };
+        self.redo_stack.push(self.capture_lenia_history());
+        if self.redo_stack.len() > HISTORY_LIMIT {
+            self.redo_stack.remove(0);
+        }
+        self.restore_lenia_history(snapshot);
+        self.status = "Restored previous Lenia field state.".to_owned();
+    }
+
+    fn redo_lenia(&mut self) {
+        let Some(snapshot) = self.redo_stack.pop() else {
+            self.status = "Nothing to redo.".to_owned();
+            return;
+        };
+        self.undo_stack.push(self.capture_lenia_history());
+        if self.undo_stack.len() > HISTORY_LIMIT {
+            self.undo_stack.remove(0);
+        }
+        self.restore_lenia_history(snapshot);
+        self.status = "Reapplied Lenia field state.".to_owned();
+    }
+
+    fn load_lenia_preset(&mut self, preset: LeniaPreset) {
+        if self.active_preset == preset {
+            return;
+        }
+        self.push_lenia_history();
+        self.active_preset = preset;
+        self.lenia.reset_preset(preset.id());
+        self.step_count = 0;
+        self.texture = None;
+        self.sync_gpu_lenia_from_cpu();
+        self.status = format!("Loaded Lenia preset: {}.", preset.label());
+    }
+
+    fn apply_grid_profile(&mut self, profile: GridProfile) {
+        if self.grid_profile == profile {
+            return;
+        }
+        self.push_lenia_history();
+        self.grid_profile = profile;
+        let size = profile.size();
+        self.lenia.resize(size, size);
+        self.lenia.reset_preset(self.active_preset.id());
+        self.step_count = 0;
+        self.texture = None;
+        self.sync_gpu_lenia_from_cpu();
+        self.status = format!("Grid profile changed to {}.", profile.label());
+    }
+
+    fn randomize_lenia_field(&mut self) {
+        self.push_lenia_history();
+        let seed = self
+            .lenia
+            .seed
+            .wrapping_mul(2_862_933_555_777_941_757)
+            .wrapping_add(3_037_000_493);
+        self.lenia.randomize_density(seed, self.random_density);
+        self.step_count = 0;
+        self.texture = None;
+        self.sync_gpu_lenia_from_cpu();
+        self.status = format!(
+            "Randomized Lenia field with density {:.2} and seed {seed}.",
+            self.random_density
+        );
+    }
+
+    fn reset_lenia_with_history(&mut self) {
+        self.push_lenia_history();
+        self.reset_active();
+        self.texture = None;
+        self.status = format!("Reset Lenia preset: {}.", self.active_preset.label());
+    }
+
+    fn step_once(&mut self) {
+        if self.gpu_lenia_active() {
+            if let Some(gpu) = &self.gpu_lenia {
+                gpu.update_params(lenia_params(&self.lenia), self.render_style);
+                gpu.queue_steps(1);
+            }
+            self.lenia.step();
+            self.step_count += 1;
+        } else {
+            self.step_active();
+        }
+    }
+
+    fn change_brush_radius(&mut self, delta: f32) {
+        self.brush_radius = (self.brush_radius + delta).clamp(1.0, 32.0);
+    }
+
+    fn handle_shortcuts(&mut self, ctx: &egui::Context) {
+        if ctx.wants_keyboard_input() {
+            return;
+        }
+
+        let shortcuts = ctx.input(|input| {
+            (
+                input.key_pressed(egui::Key::Space),
+                input.key_pressed(egui::Key::Period),
+                input.key_pressed(egui::Key::R),
+                input.key_pressed(egui::Key::C),
+                input.key_pressed(egui::Key::N),
+                input.key_pressed(egui::Key::Z) && !input.modifiers.shift,
+                input.key_pressed(egui::Key::Z) && input.modifiers.shift,
+                input.key_pressed(egui::Key::D),
+                input.key_pressed(egui::Key::E),
+                input.key_pressed(egui::Key::S),
+                input.key_pressed(egui::Key::OpenBracket),
+                input.key_pressed(egui::Key::CloseBracket),
+            )
+        });
+
+        if shortcuts.0 {
+            self.running = !self.running;
+        }
+        if shortcuts.1 {
+            self.step_once();
+        }
+        if shortcuts.2 {
+            if self.mode == SimMode::Lenia {
+                self.reset_lenia_with_history();
+            } else {
+                self.reset_active();
+            }
+        }
+        if self.mode == SimMode::Lenia {
+            if shortcuts.3 {
+                self.clear_lenia_field();
+            }
+            if shortcuts.4 {
+                self.new_lenia_seed();
+            }
+            if shortcuts.5 {
+                self.undo_lenia();
+            }
+            if shortcuts.6 {
+                self.redo_lenia();
+            }
+            if shortcuts.7 {
+                self.tool = InteractionTool::Draw;
+            }
+            if shortcuts.8 {
+                self.tool = InteractionTool::Erase;
+            }
+            if shortcuts.9 {
+                self.tool = InteractionTool::Stamp;
+            }
+            if shortcuts.10 {
+                self.change_brush_radius(-1.0);
+            }
+            if shortcuts.11 {
+                self.change_brush_radius(1.0);
+            }
+        }
+    }
+
     fn clear_lenia_field(&mut self) {
+        self.push_lenia_history();
         self.lenia.clear();
         self.step_count = 0;
+        self.texture = None;
         self.sync_gpu_lenia_from_cpu();
         self.status = "Cleared the Lenia field; draw or choose New seed to continue.".to_owned();
     }
 
     fn new_lenia_seed(&mut self) {
+        self.push_lenia_history();
         let next_seed = self
             .lenia
             .seed
             .wrapping_mul(6_364_136_223_846_793_005)
             .wrapping_add(1_442_695_040_888_963_407);
         self.lenia.reseed(next_seed);
+        self.lenia.reset_preset(self.active_preset.id());
         self.step_count = 0;
+        self.texture = None;
         self.sync_gpu_lenia_from_cpu();
         self.status = format!("Loaded deterministic Lenia seed {next_seed}.");
     }
@@ -278,8 +633,15 @@ impl PeterMathApp {
         if self.mode != SimMode::Lenia {
             return;
         }
+        if self.tool == InteractionTool::Pan {
+            return;
+        }
         if !(response.clicked_by(egui::PointerButton::Primary)
             || response.dragged_by(egui::PointerButton::Primary))
+        {
+            return;
+        }
+        if self.tool == InteractionTool::Stamp && !response.clicked_by(egui::PointerButton::Primary)
         {
             return;
         }
@@ -293,15 +655,32 @@ impl PeterMathApp {
         let (w, h) = self.lenia.size();
         let x = ((pos.x - rect.min.x) / rect.width() * w as f32).clamp(0.0, w as f32 - 1.0);
         let y = ((pos.y - rect.min.y) / rect.height() * h as f32).clamp(0.0, h as f32 - 1.0);
-        match self.brush_mode {
-            BrushMode::Draw => {
+        if !self.pointer_edit_active {
+            self.push_lenia_history();
+            self.pointer_edit_active = true;
+        }
+
+        match self.tool {
+            InteractionTool::Draw => {
                 self.lenia
                     .paint_brush(x, y, self.brush_radius, self.brush_strength);
             }
-            BrushMode::Erase => {
+            InteractionTool::Erase => {
                 self.lenia
                     .erase_brush(x, y, self.brush_radius, self.brush_strength);
             }
+            InteractionTool::Stamp => {
+                if response.clicked_by(egui::PointerButton::Primary) {
+                    self.lenia.apply_stamp(
+                        x,
+                        y,
+                        self.active_stamp.id(),
+                        self.brush_radius,
+                        self.brush_strength,
+                    );
+                }
+            }
+            InteractionTool::Pan => {}
         }
         self.sync_gpu_lenia_from_cpu();
     }
@@ -315,6 +694,17 @@ impl PeterMathApp {
                 "time_step": self.lenia.dt,
                 "damping": self.lenia.decay,
                 "backend": self.backend_label(),
+                "active_tool": self.tool.id(),
+                "active_preset": self.active_preset.id(),
+                "active_stamp": self.active_stamp.id(),
+                "brush_radius": self.brush_radius,
+                "brush_strength": self.brush_strength,
+                "random_density": self.random_density,
+                "grid_profile": self.grid_profile.label(),
+                "source_grid": {
+                    "width": self.lenia.size().0,
+                    "height": self.lenia.size().1,
+                },
             }),
             SimMode::ReactionDiffusion => json!({
                 "feed": self.reaction.feed,
@@ -379,31 +769,69 @@ impl PeterMathApp {
                 self.running = !self.running;
             }
             if ui.button("Step").clicked() {
-                if self.gpu_lenia_active() {
-                    if let Some(gpu) = &self.gpu_lenia {
-                        gpu.update_params(lenia_params(&self.lenia), self.render_style);
-                        gpu.queue_steps(1);
-                    }
-                    self.lenia.step();
-                    self.step_count += 1;
-                } else {
-                    self.step_active();
-                }
+                self.step_once();
             }
             if ui.button("Reset").clicked() {
-                self.reset_active();
+                if self.mode == SimMode::Lenia {
+                    self.reset_lenia_with_history();
+                } else {
+                    self.reset_active();
+                }
             }
         });
 
         if self.mode == SimMode::Lenia {
             ui.separator();
-            ui.heading("Field Brush");
+            ui.heading("Interaction Lab");
             ui.horizontal(|ui| {
-                ui.selectable_value(&mut self.brush_mode, BrushMode::Draw, "Draw");
-                ui.selectable_value(&mut self.brush_mode, BrushMode::Erase, "Erase");
+                for tool in InteractionTool::ALL {
+                    let shortcut = match tool {
+                        InteractionTool::Draw => "D",
+                        InteractionTool::Erase => "E",
+                        InteractionTool::Stamp => "S",
+                        InteractionTool::Pan => "safe cursor",
+                    };
+                    ui.selectable_value(&mut self.tool, tool, tool.label())
+                        .on_hover_text(shortcut);
+                }
             });
+
+            egui::ComboBox::from_label("Preset")
+                .selected_text(self.active_preset.label())
+                .show_ui(ui, |ui| {
+                    let mut selected = self.active_preset;
+                    for preset in LeniaPreset::ALL {
+                        ui.selectable_value(&mut selected, preset, preset.label());
+                    }
+                    if selected != self.active_preset {
+                        self.load_lenia_preset(selected);
+                    }
+                });
+
+            egui::ComboBox::from_label("Stamp")
+                .selected_text(self.active_stamp.label())
+                .show_ui(ui, |ui| {
+                    for stamp in LeniaStamp::ALL {
+                        ui.selectable_value(&mut self.active_stamp, stamp, stamp.label());
+                    }
+                });
+
             ui.add(egui::Slider::new(&mut self.brush_radius, 1.0..=32.0).text("brush radius"));
             ui.add(egui::Slider::new(&mut self.brush_strength, 0.05..=1.0).text("brush strength"));
+            ui.add(egui::Slider::new(&mut self.random_density, 0.02..=0.85).text("random density"));
+
+            egui::ComboBox::from_label("Grid profile")
+                .selected_text(self.grid_profile.label())
+                .show_ui(ui, |ui| {
+                    let mut selected = self.grid_profile;
+                    for profile in GridProfile::ALL {
+                        ui.selectable_value(&mut selected, profile, profile.label());
+                    }
+                    if selected != self.grid_profile {
+                        self.apply_grid_profile(selected);
+                    }
+                });
+
             ui.horizontal(|ui| {
                 if ui.button("Clear field").clicked() {
                     self.clear_lenia_field();
@@ -412,6 +840,26 @@ impl PeterMathApp {
                     self.new_lenia_seed();
                 }
             });
+            ui.horizontal(|ui| {
+                if ui.button("Random field").clicked() {
+                    self.randomize_lenia_field();
+                }
+                if ui
+                    .add_enabled(!self.undo_stack.is_empty(), egui::Button::new("Undo"))
+                    .on_hover_text("Z")
+                    .clicked()
+                {
+                    self.undo_lenia();
+                }
+                if ui
+                    .add_enabled(!self.redo_stack.is_empty(), egui::Button::new("Redo"))
+                    .on_hover_text("Shift+Z")
+                    .clicked()
+                {
+                    self.redo_lenia();
+                }
+            });
+            ui.small("Space run · . step · R reset · C clear · N seed · [ ] brush");
         }
 
         if ui.button("Export snapshot + parameters").clicked() {
@@ -423,6 +871,15 @@ impl PeterMathApp {
         ui.label(format!("Backend: {}", self.backend_label()));
         let (grid_w, grid_h) = self.active_size();
         ui.label(format!("Grid: {}x{}", grid_w, grid_h));
+        let (source_w, source_h) = self.lenia.size();
+        if self.mode == SimMode::Lenia {
+            ui.label(format!(
+                "Source: {}x{} · {}",
+                source_w,
+                source_h,
+                self.grid_profile.label()
+            ));
+        }
         ui.label(format!("Seed: {}", self.active_seed()));
         ui.label(format!("Step: {}", self.step_count));
         ui.label(format!("Frame: {}", self.mode_statement()));
@@ -553,6 +1010,11 @@ impl PeterMathApp {
 
 impl eframe::App for PeterMathApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.handle_shortcuts(ctx);
+        if !ctx.input(|input| input.pointer.primary_down()) {
+            self.pointer_edit_active = false;
+        }
+
         if self.running {
             let elapsed = self.last_tick.elapsed();
             if elapsed >= Duration::from_millis(66) {
