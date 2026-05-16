@@ -1,31 +1,28 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>peterMath Web Fallback</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b0f12'/%3E%3Cpath d='M7 18c6-9 12 9 18 0' stroke='%2378c8b2' stroke-width='3' fill='none'/%3E%3C/svg%3E">
+  <title>peterMath Lenia Fallback</title>
   <style>
     :root {
       color-scheme: dark;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #0b0f12;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #090d0f;
       color: #e7edf1;
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
       min-height: 100vh;
-      background: #0b0f12;
+      background: #090d0f;
     }
 
     .shell {
       display: grid;
-      grid-template-columns: 270px minmax(360px, 1fr) 310px;
+      grid-template-columns: 280px minmax(360px, 1fr) 320px;
       min-height: 100vh;
     }
 
@@ -36,19 +33,14 @@
       border-style: solid;
     }
 
-    .left {
-      border-width: 0 1px 0 0;
-    }
-
-    .right {
-      border-width: 0 0 0 1px;
-    }
+    .left { border-width: 0 1px 0 0; }
+    .right { border-width: 0 0 0 1px; }
 
     main {
       display: grid;
       grid-template-rows: auto 1fr auto;
       min-width: 0;
-      background: #070a0c;
+      background: #050708;
     }
 
     .topbar {
@@ -77,8 +69,8 @@
     }
 
     canvas {
-      width: min(76vh, 100%);
-      max-width: 860px;
+      width: min(78vh, 100%);
+      max-width: 880px;
       aspect-ratio: 1;
       image-rendering: pixelated;
       border: 1px solid rgba(231, 237, 241, 0.16);
@@ -93,34 +85,43 @@
       text-align: center;
     }
 
-    h1,
-    h2 {
+    h1, h2 {
       margin: 0;
       letter-spacing: 0;
     }
 
     h1 {
       font-size: 22px;
-      line-height: 1.15;
+      line-height: 1.18;
     }
 
     h2 {
       margin-top: 20px;
       margin-bottom: 10px;
       font-size: 13px;
-      text-transform: uppercase;
       color: #91a6b0;
     }
 
     p {
       color: #adbac1;
-      line-height: 1.5;
+      line-height: 1.55;
       margin: 8px 0 0;
       font-size: 13px;
     }
 
-    button,
-    select {
+    code {
+      display: block;
+      margin-top: 10px;
+      padding: 10px;
+      border: 1px solid rgba(231, 237, 241, 0.12);
+      border-radius: 6px;
+      background: #080c0e;
+      color: #ffdb80;
+      font-size: 12px;
+      white-space: normal;
+    }
+
+    button, select {
       width: 100%;
       height: 36px;
       border: 1px solid rgba(231, 237, 241, 0.16);
@@ -130,14 +131,8 @@
       font: inherit;
     }
 
-    button {
-      cursor: pointer;
-    }
-
-    button:hover,
-    select:hover {
-      border-color: rgba(122, 200, 178, 0.58);
-    }
+    button { cursor: pointer; }
+    button:hover, select:hover { border-color: rgba(100, 232, 218, 0.58); }
 
     .button-row {
       display: grid;
@@ -156,7 +151,7 @@
 
     input[type="range"] {
       width: 100%;
-      accent-color: #78c8b2;
+      accent-color: #64e8da;
     }
 
     .value {
@@ -179,49 +174,36 @@
     }
 
     .bar {
-      height: 8px;
-      overflow: hidden;
+      height: 7px;
       border-radius: 999px;
-      background: rgba(231, 237, 241, 0.1);
+      background: #1a252b;
+      overflow: hidden;
     }
 
-    .bar span {
-      display: block;
+    .fill {
       height: 100%;
+      background: linear-gradient(90deg, #64e8da, #ff76a8);
       width: 0%;
-      background: linear-gradient(90deg, #78c8b2, #d8f08b);
     }
 
-    .rule {
-      padding: 12px;
-      border: 1px solid rgba(231, 237, 241, 0.12);
-      border-radius: 7px;
-      background: rgba(255, 255, 255, 0.04);
-      color: #d8e5e8;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 12px;
-      line-height: 1.55;
+    .notice {
+      margin-top: 14px;
+      padding: 10px;
+      border: 1px solid rgba(255, 219, 128, 0.28);
+      border-radius: 6px;
+      color: #ffdb80;
+      background: rgba(255, 219, 128, 0.06);
+      font-size: 13px;
+      line-height: 1.45;
     }
 
-    .status {
-      min-height: 18px;
-      color: #8edacb;
-      font-size: 12px;
-    }
-
-    @media (max-width: 980px) {
+    @media (max-width: 960px) {
       .shell {
         grid-template-columns: 1fr;
       }
 
-      aside,
-      .left,
-      .right {
-        border-width: 0 0 1px 0;
-      }
-
-      canvas {
-        width: min(92vw, 720px);
+      aside {
+        border-width: 1px 0 0;
       }
     }
   </style>
@@ -229,372 +211,382 @@
 <body>
   <div class="shell">
     <aside class="left">
-      <h1>peterMath</h1>
-      <p>Offline web fallback for the native mathematical artwork. The executable remains the primary competition artifact.</p>
+      <h1>peterMath<br>Lenia 备用展示</h1>
+      <p>这是离线网页 fallback。正式作品是原生 GPU Lenia 程序；这里用于证明同一类连续场规则可以在浏览器里实时运行。</p>
+      <code>u_next = clamp(u + dt*(G(K*u) - damping*u), 0, 1)</code>
 
-      <h2>Preset</h2>
+      <h2>控制</h2>
       <select id="preset">
-        <option value="labyrinth">Reaction-Diffusion: labyrinth</option>
-        <option value="spots">Reaction-Diffusion: spots</option>
-        <option value="waves">Reaction-Diffusion: waves</option>
+        <option value="orbital">轨道场</option>
+        <option value="twin">双生命体</option>
+        <option value="ring">卷积核环</option>
+        <option value="soup">稀疏汤</option>
+        <option value="dense">密集开花</option>
+        <option value="coral">珊瑚衰退</option>
       </select>
-
       <div class="button-row">
-        <button id="runButton" type="button">Pause</button>
-        <button id="resetButton" type="button">Reset</button>
+        <button id="toggle">暂停</button>
+        <button id="step">单步</button>
+      </div>
+      <div class="button-row">
+        <button id="reset">重置</button>
+        <button id="seed">新种子</button>
+      </div>
+      <div class="button-row">
+        <button id="copy">复制链接</button>
+        <button id="export">导出 PNG</button>
       </div>
 
-      <h2>View</h2>
-      <select id="viewMode">
-        <option value="artistic">Artistic View</option>
-        <option value="raw">Raw Math View</option>
-      </select>
-
-      <label>
-        steps / frame <span class="value" id="stepsValue">4</span>
-        <input id="steps" type="range" min="1" max="12" step="1" value="4">
+      <label>显示方式
+        <select id="style">
+          <option value="artistic">艺术表达图</option>
+          <option value="raw">数学原始图</option>
+        </select>
       </label>
 
-      <h2>Share</h2>
-      <div class="button-row">
-        <button id="copyLink" type="button">Copy share link</button>
-        <button id="exportSnapshot" type="button">Export snapshot</button>
-      </div>
-      <p class="status" id="status">Hash links preserve seed, parameters, preset, and view.</p>
+      <label>每帧步数 <span class="value" id="stepsValue"></span>
+        <input id="steps" type="range" min="1" max="8" step="1">
+      </label>
+      <label>卷积半径 <span class="value" id="radiusValue"></span>
+        <input id="radius" type="range" min="3" max="16" step="1">
+      </label>
+      <label>增长中心 <span class="value" id="centerValue"></span>
+        <input id="center" type="range" min="0.10" max="0.60" step="0.005">
+      </label>
+      <label>增长宽度 <span class="value" id="widthValue"></span>
+        <input id="width" type="range" min="0.015" max="0.120" step="0.001">
+      </label>
+      <label>阻尼 <span class="value" id="dampingValue"></span>
+        <input id="damping" type="range" min="0.000" max="0.025" step="0.001">
+      </label>
     </aside>
 
     <main>
       <div class="topbar">
         <span class="brand">peterMath</span>
-        <span>fallback: Gray-Scott reaction-diffusion</span>
-        <span>seed: <strong id="seedLabel">4101</strong></span>
-        <span>step: <strong id="stepLabel">0</strong></span>
-        <span>style: <strong id="styleLabel">artistic</strong></span>
+        <span>连续生命场 Lenia</span>
+        <span id="seedLabel"></span>
+        <span id="stepLabel"></span>
+        <span id="phaseLabel"></span>
       </div>
       <div class="stage">
-        <canvas id="field" width="220" height="220"></canvas>
+        <canvas id="canvas" width="256" height="256"></canvas>
       </div>
-      <div class="caption">Same judging story: deterministic seed, adjustable rule, raw/artistic views, and live metrics.</div>
+      <div class="caption">点击或拖动画布可注入生命量。参数变化会立即重置当前规则并实时重算。</div>
     </main>
 
     <aside class="right">
-      <h2>Parameters</h2>
-      <label>
-        feed <span class="value" id="feedValue">0.036</span>
-        <input id="feed" type="range" min="0.010" max="0.080" step="0.001" value="0.036">
-      </label>
-      <label>
-        kill <span class="value" id="killValue">0.060</span>
-        <input id="kill" type="range" min="0.030" max="0.080" step="0.001" value="0.060">
-      </label>
-      <label>
-        diffusion A <span class="value" id="diffAValue">1.00</span>
-        <input id="diffA" type="range" min="0.40" max="1.40" step="0.01" value="1.00">
-      </label>
-      <label>
-        diffusion B <span class="value" id="diffBValue">0.50</span>
-        <input id="diffB" type="range" min="0.10" max="0.80" step="0.01" value="0.50">
-      </label>
-
-      <h2>Metrics</h2>
-      <div class="metric">
-        <div class="metric-head"><span>activity</span><span id="activityText">0.00</span></div>
-        <div class="bar"><span id="activityBar"></span></div>
-      </div>
-      <div class="metric">
-        <div class="metric-head"><span>contrast</span><span id="contrastText">0.00</span></div>
-        <div class="bar"><span id="contrastBar"></span></div>
-      </div>
-      <div class="metric">
-        <div class="metric-head"><span>symmetry</span><span id="symmetryText">0.00</span></div>
-        <div class="bar"><span id="symmetryBar"></span></div>
-      </div>
-
-      <h2>Rule</h2>
-      <div class="rule">
-        A' = A + dA lap(A) - A B^2 + feed(1-A)<br>
-        B' = B + dB lap(B) + A B^2 - (kill+feed)B
-      </div>
+      <h2>看什么</h2>
+      <p>观察同一公式如何从不同初始条件生成漂移、耦合、尺度变化、湍动和衰退。</p>
+      <h2>变量含义</h2>
+      <p><b>u</b> 是当前生命量；<b>K*u</b> 是邻域卷积；<b>G</b> 是增长函数；<b>damping</b> 是阻尼。</p>
+      <h2>指标</h2>
+      <div class="metric"><div class="metric-head"><span>质量</span><span id="massText"></span></div><div class="bar"><div class="fill" id="massBar"></div></div></div>
+      <div class="metric"><div class="metric-head"><span>熵</span><span id="entropyText"></span></div><div class="bar"><div class="fill" id="entropyBar"></div></div></div>
+      <div class="metric"><div class="metric-head"><span>稳定度</span><span id="stabilityText"></span></div><div class="bar"><div class="fill" id="stabilityBar"></div></div></div>
+      <div class="metric"><div class="metric-head"><span>生命力</span><span id="vitalityText"></span></div><div class="bar"><div class="fill" id="vitalityBar"></div></div></div>
+      <div class="notice" id="status">正在实时运行 Lenia fallback。</div>
     </aside>
   </div>
 
   <script>
-    const size = 220;
-    const total = size * size;
-    const canvas = document.getElementById("field");
-    const ctx = canvas.getContext("2d", { alpha: false });
-    const image = ctx.createImageData(size, size);
-
-    let a = new Float32Array(total);
-    let b = new Float32Array(total);
-    let nextA = new Float32Array(total);
-    let nextB = new Float32Array(total);
+    const N = 256;
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const image = ctx.createImageData(N, N);
+    let field = new Float32Array(N * N);
+    let next = new Float32Array(N * N);
+    let previous = new Float32Array(N * N);
+    let kernel = [];
     let running = true;
     let stepCount = 0;
-    let seed = 4101;
-    let suppressHash = false;
+    let seed = 1001;
 
-    const presets = {
-      labyrinth: { seed: 4101, feed: 0.036, kill: 0.060, diffA: 1.00, diffB: 0.50 },
-      spots: { seed: 5307, feed: 0.026, kill: 0.055, diffA: 1.00, diffB: 0.48 },
-      waves: { seed: 7801, feed: 0.045, kill: 0.063, diffA: 0.92, diffB: 0.42 }
+    const controls = {
+      preset: document.getElementById('preset'),
+      style: document.getElementById('style'),
+      steps: document.getElementById('steps'),
+      radius: document.getElementById('radius'),
+      center: document.getElementById('center'),
+      width: document.getElementById('width'),
+      damping: document.getElementById('damping')
     };
 
-    const ui = {
-      preset: document.getElementById("preset"),
-      viewMode: document.getElementById("viewMode"),
-      runButton: document.getElementById("runButton"),
-      resetButton: document.getElementById("resetButton"),
-      copyLink: document.getElementById("copyLink"),
-      exportSnapshot: document.getElementById("exportSnapshot"),
-      status: document.getElementById("status"),
-      steps: document.getElementById("steps"),
-      stepsValue: document.getElementById("stepsValue"),
-      feed: document.getElementById("feed"),
-      feedValue: document.getElementById("feedValue"),
-      kill: document.getElementById("kill"),
-      killValue: document.getElementById("killValue"),
-      diffA: document.getElementById("diffA"),
-      diffAValue: document.getElementById("diffAValue"),
-      diffB: document.getElementById("diffB"),
-      diffBValue: document.getElementById("diffBValue"),
-      seedLabel: document.getElementById("seedLabel"),
-      stepLabel: document.getElementById("stepLabel"),
-      styleLabel: document.getElementById("styleLabel"),
-      activityText: document.getElementById("activityText"),
-      activityBar: document.getElementById("activityBar"),
-      contrastText: document.getElementById("contrastText"),
-      contrastBar: document.getElementById("contrastBar"),
-      symmetryText: document.getElementById("symmetryText"),
-      symmetryBar: document.getElementById("symmetryBar")
+    const defaults = {
+      preset: 'orbital',
+      style: 'artistic',
+      steps: 1,
+      radius: 9,
+      center: 0.31,
+      width: 0.052,
+      damping: 0.003
     };
 
     function rng(seedValue) {
-      let t = seedValue >>> 0;
-      return function next() {
-        t += 0x6D2B79F5;
-        let x = Math.imul(t ^ (t >>> 15), t | 1);
-        x ^= x + Math.imul(x ^ (x >>> 7), x | 61);
-        return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+      let x = seedValue >>> 0;
+      return () => {
+        x ^= x << 13; x ^= x >>> 17; x ^= x << 5;
+        return ((x >>> 0) / 4294967296);
       };
     }
 
-    function index(x, y) {
-      const xx = (x + size) % size;
-      const yy = (y + size) % size;
-      return yy * size + xx;
+    function wrap(x, y) {
+      return ((y + N) % N) * N + ((x + N) % N);
     }
 
-    function applyPreset(name, keepHash) {
-      const p = presets[name] || presets.labyrinth;
-      ui.preset.value = presets[name] ? name : "labyrinth";
-      seed = p.seed;
-      ui.feed.value = p.feed;
-      ui.kill.value = p.kill;
-      ui.diffA.value = p.diffA;
-      ui.diffB.value = p.diffB;
-      resetField();
-      syncLabels();
-      if (!keepHash) updateHash();
+    function addBlob(cx, cy, sigma, amp) {
+      const r = Math.ceil(sigma * 3);
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          const d2 = dx * dx + dy * dy;
+          const v = amp * Math.exp(-d2 / (2 * sigma * sigma));
+          const i = wrap(Math.round(cx + dx), Math.round(cy + dy));
+          field[i] = Math.min(1, field[i] + v);
+        }
+      }
+    }
+
+    function rebuildKernel() {
+      kernel = [];
+      const radius = Number(controls.radius.value);
+      let total = 0;
+      for (let dy = -radius; dy <= radius; dy++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          const d = Math.sqrt(dx * dx + dy * dy) / radius;
+          if (d <= 1) {
+            const ring = Math.exp(-((d - 0.55) ** 2) / 0.10);
+            const hollow = 1 - Math.exp(-(d ** 2) / 0.05) * 0.35;
+            const weight = ring * hollow;
+            kernel.push([dx, dy, weight]);
+            total += weight;
+          }
+        }
+      }
+      kernel = kernel.map(([dx, dy, w]) => [dx, dy, w / total]);
     }
 
     function resetField() {
-      a.fill(1);
-      b.fill(0);
+      field.fill(0);
+      previous.fill(0);
+      next.fill(0);
+      rebuildKernel();
       const random = rng(seed);
-      const centers = 16;
-      for (let i = 0; i < centers; i++) {
-        const cx = Math.floor(random() * size);
-        const cy = Math.floor(random() * size);
-        const radius = 5 + Math.floor(random() * 13);
-        for (let y = -radius; y <= radius; y++) {
-          for (let x = -radius; x <= radius; x++) {
-            if (x * x + y * y <= radius * radius) {
-              const id = index(cx + x, cy + y);
-              a[id] = 0.45 + random() * 0.08;
-              b[id] = 0.22 + random() * 0.55;
-            }
+      const preset = controls.preset.value;
+      if (preset === 'twin') {
+        for (const side of [-1, 1]) {
+          for (let i = 0; i < 18; i++) {
+            const t = i / 18;
+            const a = i * 2.399963 + side * 0.45;
+            const r = 0.035 + 0.18 * Math.sqrt(t);
+            addBlob(N * (0.50 + side * 0.19 + r * Math.cos(a)), N * (0.50 + r * Math.sin(a)), 3.4 + (i % 4), 0.24 + 0.18 * (1 - t));
           }
+        }
+      } else if (preset === 'ring') {
+        for (let i = 0; i < 44; i++) {
+          const a = i / 44 * Math.PI * 2;
+          const r = i % 2 === 0 ? 0.22 : 0.31;
+          addBlob(N * (0.5 + r * Math.cos(a)), N * (0.5 + r * Math.sin(a)), 3.2 + (i % 3), 0.22 + 0.12 * random());
+        }
+      } else if (preset === 'soup') {
+        for (let i = 0; i < 38; i++) addBlob(random() * N, random() * N, 3 + random() * 11, 0.15 + random() * 0.42);
+      } else if (preset === 'dense') {
+        for (let i = 0; i < 84; i++) addBlob(random() * N, random() * N, 2.6 + random() * 9, 0.12 + random() * 0.30);
+      } else if (preset === 'coral') {
+        for (let i = 0; i < 52; i++) {
+          const t = i / 52;
+          const a = 0.55 + t * Math.PI * 4.6;
+          const r = 0.07 + 0.33 * t;
+          addBlob(N * (0.5 + r * Math.cos(a) * 0.95), N * (0.5 + r * Math.sin(a) * 0.55), 2.7 + (i % 6) * 0.55, 0.22 + 0.16 * random());
+        }
+      } else {
+        for (let i = 0; i < 28; i++) {
+          const t = i / 28;
+          const a = i * 2.399963 + 0.21 * Math.sin(i * 1.7);
+          const r = 0.035 + 0.31 * Math.sqrt(t);
+          addBlob(N * (0.5 + r * Math.cos(a)), N * (0.5 + r * Math.sin(a)), 3.6 + (i % 5), 0.24 + 0.18 * (1 - t));
         }
       }
       stepCount = 0;
       render();
+      updateHash();
     }
 
-    function lap(grid, x, y) {
-      return -grid[index(x, y)]
-        + 0.20 * (grid[index(x, y - 1)] + grid[index(x, y + 1)] + grid[index(x - 1, y)] + grid[index(x + 1, y)])
-        + 0.05 * (grid[index(x - 1, y - 1)] + grid[index(x + 1, y - 1)] + grid[index(x - 1, y + 1)] + grid[index(x + 1, y + 1)]);
+    function growth(x) {
+      const center = Number(controls.center.value);
+      const width = Number(controls.width.value);
+      return 2 * Math.exp(-((x - center) ** 2) / (2 * width * width)) - 1;
     }
 
-    function simulate() {
-      const feed = Number(ui.feed.value);
-      const kill = Number(ui.kill.value);
-      const diffA = Number(ui.diffA.value);
-      const diffB = Number(ui.diffB.value);
-      for (let y = 0; y < size; y++) {
-        for (let x = 0; x < size; x++) {
-          const id = index(x, y);
-          const av = a[id];
-          const bv = b[id];
-          const reaction = av * bv * bv;
-          nextA[id] = clamp(av + diffA * lap(a, x, y) - reaction + feed * (1 - av));
-          nextB[id] = clamp(bv + diffB * lap(b, x, y) + reaction - (kill + feed) * bv);
+    function step() {
+      previous.set(field);
+      const damping = Number(controls.damping.value);
+      for (let y = 0; y < N; y++) {
+        for (let x = 0; x < N; x++) {
+          let average = 0;
+          for (const [dx, dy, weight] of kernel) average += field[wrap(x + dx, y + dy)] * weight;
+          const i = y * N + x;
+          next[i] = Math.max(0, Math.min(1, field[i] + 0.060 * (growth(average) - damping * field[i])));
         }
       }
-      [a, nextA] = [nextA, a];
-      [b, nextB] = [nextB, b];
+      [field, next] = [next, field];
       stepCount++;
     }
 
-    function clamp(value) {
-      return Math.max(0, Math.min(1, value));
-    }
-
     function render() {
-      const raw = ui.viewMode.value === "raw";
-      let mass = 0;
-      let sum = 0;
-      let sumSq = 0;
-      let mirrorError = 0;
-      for (let y = 0; y < size; y++) {
-        for (let x = 0; x < size; x++) {
-          const id = index(x, y);
-          const value = clamp(b[id]);
-          mass += value;
-          sum += value;
-          sumSq += value * value;
-          mirrorError += Math.abs(value - b[index(size - 1 - x, y)]);
-          const p = id * 4;
-          if (raw) {
-            const g = Math.floor(value * 255);
-            image.data[p] = g;
-            image.data[p + 1] = g;
-            image.data[p + 2] = g;
+      let sum = 0, diff = 0, active = 0;
+      const bins = new Array(16).fill(0);
+      for (let i = 0; i < field.length; i++) {
+        const v = Math.max(0, Math.min(1, field[i]));
+        sum += v;
+        diff += Math.abs(v - previous[i]);
+        if (v > 0.08) active++;
+        bins[Math.min(15, Math.floor(v * 15.999))]++;
+      }
+      const mass = sum / field.length;
+      let entropy = 0;
+      for (const count of bins) if (count) { const p = count / field.length; entropy -= p * Math.log2(p); }
+      entropy = Math.min(1, entropy / 4);
+      const stability = Math.max(0, Math.min(1, 1 - diff / field.length));
+      const vitality = Math.max(0, Math.min(1, 0.30 * entropy + 0.25 * mass + 0.20 * (1 - stability) + 0.25 * Math.min(1, active / field.length * 5)));
+
+      for (let y = 0; y < N; y++) {
+        for (let x = 0; x < N; x++) {
+          const i = y * N + x;
+          const v = Math.max(0, Math.min(1, field[i]));
+          const out = i * 4;
+          if (controls.style.value === 'raw') {
+            const c = Math.round(v * 255);
+            image.data[out] = c; image.data[out + 1] = c; image.data[out + 2] = c; image.data[out + 3] = 255;
           } else {
-            const contour = Math.abs((value * 18) % 1 - 0.5);
-            image.data[p] = Math.floor(20 + 210 * Math.pow(value, 0.55));
-            image.data[p + 1] = Math.floor(36 + 205 * Math.pow(1 - contour, 2.0));
-            image.data[p + 2] = Math.floor(42 + 160 * (1 - value));
+            const gx = field[wrap(x + 1, y)] - field[wrap(x - 1, y)];
+            const gy = field[wrap(x, y + 1)] - field[wrap(x, y - 1)];
+            const edge = Math.min(1, Math.sqrt(gx * gx + gy * gy) * 3);
+            const contour = 1 - smooth(0.025, 0.17, Math.abs((v * 19) % 1 - 0.5));
+            const delta = v - previous[i];
+            const birth = smooth(0.002, 0.060, Math.max(delta, 0));
+            const decay = smooth(0.002, 0.060, Math.max(-delta, 0));
+            const glow = smooth(0.03, 0.82, v * 1.3);
+            image.data[out] = byte(0.018 + 0.14 * glow + 0.24 * contour + 0.46 * decay);
+            image.data[out + 1] = byte(0.034 + 0.48 * glow + 0.42 * contour + 0.16 * edge + 0.30 * birth);
+            image.data[out + 2] = byte(0.054 + 0.48 * glow + 0.22 * contour + 0.36 * edge + 0.34 * birth + 0.18 * decay);
+            image.data[out + 3] = 255;
           }
-          image.data[p + 3] = 255;
         }
       }
       ctx.putImageData(image, 0, 0);
-      updateMetrics(mass / total, Math.sqrt(Math.max(0, sumSq / total - (sum / total) ** 2)) * 3, 1 - mirrorError / total);
-      ui.stepLabel.textContent = String(stepCount);
-      ui.seedLabel.textContent = String(seed);
-      ui.styleLabel.textContent = ui.viewMode.value;
+      updateMetrics(mass, entropy, stability, vitality);
     }
 
-    function updateMetrics(activity, contrast, symmetry) {
-      setMetric(ui.activityText, ui.activityBar, activity);
-      setMetric(ui.contrastText, ui.contrastBar, contrast);
-      setMetric(ui.symmetryText, ui.symmetryBar, symmetry);
+    function smooth(a, b, x) {
+      const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+      return t * t * (3 - 2 * t);
     }
 
-    function setMetric(text, bar, value) {
-      const v = clamp(value);
-      text.textContent = v.toFixed(2);
-      bar.style.width = `${Math.round(v * 100)}%`;
+    function byte(v) { return Math.round(Math.max(0, Math.min(1, v)) * 255); }
+
+    function updateMetrics(mass, entropy, stability, vitality) {
+      setMetric('mass', mass);
+      setMetric('entropy', entropy);
+      setMetric('stability', stability);
+      setMetric('vitality', vitality);
+      document.getElementById('seedLabel').textContent = `种子 ${seed}`;
+      document.getElementById('stepLabel').textContent = `步数 ${stepCount}`;
+      document.getElementById('phaseLabel').textContent = `阶段 ${phaseLabel(mass, entropy, stability, vitality)}`;
     }
 
-    function syncLabels() {
-      ui.stepsValue.textContent = ui.steps.value;
-      ui.feedValue.textContent = Number(ui.feed.value).toFixed(3);
-      ui.killValue.textContent = Number(ui.kill.value).toFixed(3);
-      ui.diffAValue.textContent = Number(ui.diffA.value).toFixed(2);
-      ui.diffBValue.textContent = Number(ui.diffB.value).toFixed(2);
+    function setMetric(id, value) {
+      document.getElementById(`${id}Text`).textContent = value.toFixed(3);
+      document.getElementById(`${id}Bar`).style.width = `${Math.max(0, Math.min(1, value)) * 100}%`;
     }
 
-    function currentHash() {
-      const p = new URLSearchParams();
-      p.set("preset", ui.preset.value);
-      p.set("seed", String(seed));
-      p.set("feed", Number(ui.feed.value).toFixed(3));
-      p.set("kill", Number(ui.kill.value).toFixed(3));
-      p.set("diffA", Number(ui.diffA.value).toFixed(2));
-      p.set("diffB", Number(ui.diffB.value).toFixed(2));
-      p.set("style", ui.viewMode.value);
-      p.set("steps", ui.steps.value);
-      return p.toString();
+    function phaseLabel(mass, entropy, stability, vitality) {
+      if (mass < 0.012) return '稀疏';
+      if (mass > 0.44) return '密集';
+      if (stability > 0.965 && vitality < 0.42) return '稳定';
+      if ((1 - stability) > 0.18 && entropy > 0.42) return '湍动';
+      if (vitality > 0.58) return '增长';
+      return '漂移';
+    }
+
+    function tick() {
+      if (running) {
+        const count = Number(controls.steps.value);
+        for (let i = 0; i < count; i++) step();
+        render();
+      }
+      requestAnimationFrame(tick);
+    }
+
+    function updateLabels() {
+      for (const key of ['steps', 'radius', 'center', 'width', 'damping']) {
+        document.getElementById(`${key}Value`).textContent = controls[key].value;
+      }
     }
 
     function updateHash() {
-      if (suppressHash) return;
-      history.replaceState(null, "", `#${currentHash()}`);
+      const params = new URLSearchParams();
+      params.set('preset', controls.preset.value);
+      params.set('seed', seed);
+      params.set('radius', controls.radius.value);
+      params.set('center', controls.center.value);
+      params.set('width', controls.width.value);
+      params.set('damping', controls.damping.value);
+      params.set('style', controls.style.value);
+      params.set('steps', controls.steps.value);
+      history.replaceState(null, '', `#${params.toString()}`);
+      updateLabels();
     }
 
-    function restoreHash() {
-      const params = new URLSearchParams(location.hash.replace(/^#/, ""));
-      const preset = params.get("preset") || "labyrinth";
-      suppressHash = true;
-      applyPreset(preset, true);
-      if (params.has("seed")) seed = Number(params.get("seed")) || seed;
-      for (const [key, element] of [["feed", ui.feed], ["kill", ui.kill], ["diffA", ui.diffA], ["diffB", ui.diffB], ["steps", ui.steps]]) {
-        if (params.has(key)) element.value = params.get(key);
+    function loadHash() {
+      const params = new URLSearchParams(location.hash.slice(1));
+      for (const [key, value] of Object.entries(defaults)) {
+        if (controls[key]) controls[key].value = params.get(key) ?? value;
       }
-      if (params.has("style")) ui.viewMode.value = params.get("style");
-      resetField();
-      syncLabels();
-      render();
-      suppressHash = false;
-      updateHash();
+      seed = Number(params.get('seed') ?? 1001);
     }
 
-    async function copyShareLink() {
-      const url = `${location.href.split("#")[0]}#${currentHash()}`;
-      try {
-        await navigator.clipboard.writeText(url);
-        ui.status.textContent = "Share link copied.";
-      } catch {
-        ui.status.textContent = url;
-      }
-    }
-
-    function exportSnapshot() {
-      const link = document.createElement("a");
-      link.download = `peterMath_web_seed${seed}_step${stepCount}.png`;
-      link.href = canvas.toDataURL("image/png");
-      link.click();
-      ui.status.textContent = "Snapshot exported from the web fallback.";
-    }
-
-    function frame() {
-      syncLabels();
-      if (running) {
-        const steps = Number(ui.steps.value);
-        for (let i = 0; i < steps; i++) simulate();
-      }
-      render();
-      requestAnimationFrame(frame);
-    }
-
-    ui.runButton.addEventListener("click", () => {
-      running = !running;
-      ui.runButton.textContent = running ? "Pause" : "Run";
-    });
-    ui.resetButton.addEventListener("click", () => {
-      resetField();
-      updateHash();
-    });
-    ui.copyLink.addEventListener("click", copyShareLink);
-    ui.exportSnapshot.addEventListener("click", exportSnapshot);
-    ui.preset.addEventListener("change", () => applyPreset(ui.preset.value));
-    ui.viewMode.addEventListener("change", () => {
-      render();
-      updateHash();
-    });
-
-    for (const input of [ui.steps, ui.feed, ui.kill, ui.diffA, ui.diffB]) {
-      input.addEventListener("input", () => {
-        syncLabels();
-        updateHash();
+    for (const control of Object.values(controls)) {
+      control.addEventListener('input', () => {
+        document.getElementById('status').textContent = '参数已改变：当前规则正在实时重新计算。';
+        resetField();
       });
     }
 
-    restoreHash();
-    frame();
+    document.getElementById('toggle').addEventListener('click', () => {
+      running = !running;
+      document.getElementById('toggle').textContent = running ? '暂停' : '运行';
+    });
+    document.getElementById('step').addEventListener('click', () => { step(); render(); });
+    document.getElementById('reset').addEventListener('click', resetField);
+    document.getElementById('seed').addEventListener('click', () => { seed = (seed * 1664525 + 1013904223) >>> 0; resetField(); });
+    document.getElementById('copy').addEventListener('click', async () => {
+      updateHash();
+      await navigator.clipboard.writeText(location.href);
+      document.getElementById('status').textContent = '已复制当前 Lenia 分享链接。';
+    });
+    document.getElementById('export').addEventListener('click', () => {
+      const a = document.createElement('a');
+      a.download = `peterMath_lenia_seed${seed}_step${stepCount}.png`;
+      a.href = canvas.toDataURL('image/png');
+      a.click();
+    });
+
+    canvas.addEventListener('pointerdown', inject);
+    canvas.addEventListener('pointermove', (event) => { if (event.buttons) inject(event); });
+    function inject(event) {
+      const rect = canvas.getBoundingClientRect();
+      const x = Math.floor((event.clientX - rect.left) / rect.width * N);
+      const y = Math.floor((event.clientY - rect.top) / rect.height * N);
+      addBlob(x, y, 8, 0.65);
+      previous.set(field);
+      render();
+      document.getElementById('status').textContent = '已向 Lenia 场注入生命量。';
+    }
+
+    loadHash();
+    updateLabels();
+    resetField();
+    tick();
   </script>
 </body>
 </html>

@@ -189,13 +189,13 @@ fn share_state(state: ShareStateExport<'_>) -> ShareState<'_> {
 
 fn evidence_summary(snapshot_name: &str, w: usize, h: usize) -> String {
     format!(
-        "# peterMath Evidence Pack\n\n\
-This folder contains a reproducible snapshot from the native peterMath app.\n\n\
+        "# peterMath Lenia Evidence Pack\n\n\
+This folder contains a reproducible Lenia snapshot from the native peterMath app.\n\n\
 - Snapshot: `{snapshot_name}_snapshot.png`\n\
 - Parameters: `{snapshot_name}_parameters.json`\n\
 - Share state: `peterMath_share_state.json`\n\
 - Image size: {w}x{h}\n\n\
-Use the JSON files to verify seed, parameters, metrics, inspector data, and performance diagnostics for the same visible state.\n"
+Use the JSON files to verify seed, Lenia parameters, metrics, inspector data, active region, show-mode context, and performance diagnostics for the same visible state.\n"
     )
 }
 

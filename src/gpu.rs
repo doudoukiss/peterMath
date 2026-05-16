@@ -523,7 +523,7 @@ pub fn colorize_fields(
                         - field[((y + size - 1) % size) * size + x];
                     let edge = (gx * gx + gy * gy).sqrt() * 3.0;
                     let prior = previous.get(i).copied().unwrap_or(value);
-                    palette::life_field_delta(
+                    palette::lenia_field_delta(
                         (value * 1.30).clamp(0.0, 1.0),
                         edge,
                         value,
@@ -791,7 +791,7 @@ fn smooth_step(edge0: f32, edge1: f32, x: f32) -> f32 {
     return t * t * (3.0 - 2.0 * t);
 }
 
-fn life_palette(value: f32, edge: f32, delta: f32) -> vec3<f32> {
+fn lenia_palette(value: f32, edge: f32, delta: f32) -> vec3<f32> {
     let x = clamp(value, 0.0, 1.0);
     let ridge = smooth_step(0.015, 0.18, edge);
     let contour_distance = abs(fract(x * 19.0) - 0.5);
@@ -822,7 +822,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let gy = sample_field(x, y + 1) - sample_field(x, y - 1);
     let edge = sqrt(gx * gx + gy * gy) * 3.0;
     let index = u32(y) * params.size + u32(x);
-    let color = clamp(life_palette(value * 1.3, edge, value - previous_field[index]), vec3<f32>(0.0), vec3<f32>(1.0));
+    let color = clamp(lenia_palette(value * 1.3, edge, value - previous_field[index]), vec3<f32>(0.0), vec3<f32>(1.0));
     return vec4<f32>(color, 1.0);
 }
 "#;

@@ -466,7 +466,7 @@ impl LeniaSim {
                         let gy = self.field[wrap_index(x as isize, y as isize + 1, self.w, self.h)]
                             - self.field[wrap_index(x as isize, y as isize - 1, self.w, self.h)];
                         let edge = (gx * gx + gy * gy).sqrt() * 3.0;
-                        palette::life_field_delta(
+                        palette::lenia_field_delta(
                             (v * 1.30).clamp(0.0, 1.0),
                             edge,
                             v,

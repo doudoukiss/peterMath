@@ -2,7 +2,7 @@
 name = "peterMath"
 version = "0.1.0"
 edition = "2021"
-description = "peterMath: a mathematical life-system laboratory"
+description = "peterMath: a Lenia continuous-field computational artwork"
 license = "UNLICENSED"
 default-run = "peterMath"
 
