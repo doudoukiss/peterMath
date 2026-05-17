@@ -18,7 +18,7 @@
     body {
       margin: 0;
       min-height: 100vh;
-      background: #090d0f;
+      background: #05080b;
     }
 
     .shell {
@@ -29,7 +29,7 @@
 
     aside {
       padding: 18px;
-      background: #0e1518;
+      background: #0b1318;
       border-color: rgba(231, 237, 241, 0.12);
       border-style: solid;
     }
@@ -127,13 +127,16 @@
       height: 36px;
       border: 1px solid rgba(231, 237, 241, 0.16);
       border-radius: 6px;
-      background: #172126;
+      background: #182832;
       color: #edf5f7;
       font: inherit;
     }
 
-    button { cursor: pointer; }
-    button:hover, select:hover { border-color: rgba(100, 232, 218, 0.58); }
+    button { cursor: pointer; font-weight: 650; }
+    button:hover, select:hover {
+      border-color: rgba(69, 218, 231, 0.72);
+      background: #203843;
+    }
 
     .button-row {
       display: grid;
@@ -175,7 +178,7 @@
     }
 
     .bar {
-      height: 7px;
+      height: 8px;
       border-radius: 999px;
       background: #1a252b;
       overflow: hidden;
@@ -183,7 +186,7 @@
 
     .fill {
       height: 100%;
-      background: linear-gradient(90deg, #64e8da, #ff76a8);
+      background: linear-gradient(90deg, #45dae7, #8bf270, #ffcf5c);
       width: 0%;
     }
 
@@ -218,6 +221,34 @@
       text-align: left;
     }
 
+    .mission-card {
+      border: 1px solid rgba(231, 237, 241, 0.14);
+      border-radius: 6px;
+      background: #16242c;
+      color: #cfdbe0;
+    }
+
+    .mission-card.active {
+      border-color: rgba(69, 218, 231, 0.85);
+      background: #132932;
+      color: #f4fafc;
+      box-shadow: 0 0 0 1px rgba(69, 218, 231, 0.12);
+    }
+
+    .mission-card.done {
+      border-color: rgba(139, 242, 112, 0.75);
+      background: #11251f;
+      color: #e8ffe2;
+    }
+
+    .hud {
+      margin-top: 12px;
+      padding: 12px;
+      border: 1px solid rgba(69, 218, 231, 0.34);
+      border-radius: 6px;
+      background: rgba(69, 218, 231, 0.07);
+    }
+
     @media (max-width: 960px) {
       .shell {
         grid-template-columns: 1fr;
@@ -237,9 +268,11 @@
       <code>u_next = clamp(u + dt*(G(K*u) - damping*u), 0, 1)</code>
 
       <h2>任务模式</h2>
-      <div class="mission-title" id="missionTitle"></div>
-      <p id="missionGoal"></p>
-      <div class="bar"><div class="fill" id="missionBar"></div></div>
+      <div class="hud">
+        <div class="mission-title" id="missionTitle"></div>
+        <p id="missionGoal"></p>
+        <div class="bar"><div class="fill" id="missionBar"></div></div>
+      </div>
       <div class="button-row">
         <button id="hint">提示</button>
         <button id="nextMission">下一任务</button>
@@ -271,6 +304,7 @@
 
       <label>显示方式
         <select id="style">
+          <option value="life">生命高光图</option>
           <option value="artistic">艺术表达图</option>
           <option value="raw">数学原始图</option>
         </select>
@@ -359,7 +393,7 @@
 
     const defaults = {
       preset: 'orbital',
-      style: 'artistic',
+      style: 'life',
       steps: 1,
       radius: 9,
       center: 0.31,
@@ -506,14 +540,24 @@
             const gx = field[wrap(x + 1, y)] - field[wrap(x - 1, y)];
             const gy = field[wrap(x, y + 1)] - field[wrap(x, y - 1)];
             const edge = Math.min(1, Math.sqrt(gx * gx + gy * gy) * 3);
-            const contour = 1 - smooth(0.025, 0.17, Math.abs((v * 19) % 1 - 0.5));
             const delta = v - previous[i];
             const birth = smooth(0.002, 0.060, Math.max(delta, 0));
             const decay = smooth(0.002, 0.060, Math.max(-delta, 0));
-            const glow = smooth(0.03, 0.82, v * 1.3);
-            image.data[out] = byte(0.018 + 0.14 * glow + 0.24 * contour + 0.46 * decay);
-            image.data[out + 1] = byte(0.034 + 0.48 * glow + 0.42 * contour + 0.16 * edge + 0.30 * birth);
-            image.data[out + 2] = byte(0.054 + 0.48 * glow + 0.22 * contour + 0.36 * edge + 0.34 * birth + 0.18 * decay);
+            if (controls.style.value === 'life') {
+              const contour = 1 - smooth(0.018, 0.14, Math.abs((v * 23) % 1 - 0.5));
+              const glow = smooth(0.018, 0.72, v * 1.3);
+              const core = smooth(0.46, 0.98, v * 1.3);
+              const pulse = Math.min(1, 0.55 * birth + 0.45 * decay);
+              image.data[out] = byte(0.020 + 0.20 * glow + 0.62 * core + 0.28 * contour + 0.18 * edge + 0.78 * decay);
+              image.data[out + 1] = byte(0.045 + 0.56 * glow + 0.22 * core + 0.35 * contour + 0.22 * edge + 0.62 * birth);
+              image.data[out + 2] = byte(0.080 + 0.64 * glow + 0.14 * core + 0.30 * contour + 0.50 * edge + 0.52 * pulse);
+            } else {
+              const contour = 1 - smooth(0.025, 0.17, Math.abs((v * 19) % 1 - 0.5));
+              const glow = smooth(0.03, 0.82, v * 1.3);
+              image.data[out] = byte(0.018 + 0.14 * glow + 0.24 * contour + 0.46 * decay);
+              image.data[out + 1] = byte(0.034 + 0.48 * glow + 0.42 * contour + 0.16 * edge + 0.30 * birth);
+              image.data[out + 2] = byte(0.054 + 0.48 * glow + 0.22 * contour + 0.36 * edge + 0.34 * birth + 0.18 * decay);
+            }
             image.data[out + 3] = 255;
           }
         }
@@ -622,6 +666,7 @@
         const button = document.createElement('button');
         const status = completedMissions.has(mission.id) ? '已完成' : index === missionIndex ? '进行中' : '未开始';
         button.textContent = `${status} · ${mission.title}`;
+        button.className = `mission-card${index === missionIndex ? ' active' : ''}${completedMissions.has(mission.id) ? ' done' : ''}`;
         button.onclick = () => startMission(index);
         list.appendChild(button);
       });
@@ -630,7 +675,7 @@
     function startMission(index) {
       missionIndex = Math.max(0, Math.min(missions.length - 1, index));
       controls.preset.value = missions[missionIndex].preset;
-      controls.style.value = 'artistic';
+      controls.style.value = 'life';
       resetField();
       resetMissionState();
       document.getElementById('status').textContent = `任务开始：${missions[missionIndex].title}`;

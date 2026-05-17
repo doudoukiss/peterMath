@@ -460,18 +460,23 @@ impl LeniaSim {
                 let v = self.field[i];
                 let rgba = match style {
                     RenderStyle::RawMath => palette::raw_gray(v),
-                    RenderStyle::Artistic => {
+                    RenderStyle::Artistic | RenderStyle::LifeHighlight => {
                         let gx = self.field[wrap_index(x as isize + 1, y as isize, self.w, self.h)]
                             - self.field[wrap_index(x as isize - 1, y as isize, self.w, self.h)];
                         let gy = self.field[wrap_index(x as isize, y as isize + 1, self.w, self.h)]
                             - self.field[wrap_index(x as isize, y as isize - 1, self.w, self.h)];
                         let edge = (gx * gx + gy * gy).sqrt() * 3.0;
-                        palette::lenia_field_delta(
-                            (v * 1.30).clamp(0.0, 1.0),
-                            edge,
-                            v,
-                            v - self.previous[i],
-                        )
+                        let value = (v * 1.30).clamp(0.0, 1.0);
+                        let delta = v - self.previous[i];
+                        match style {
+                            RenderStyle::Artistic => {
+                                palette::lenia_field_delta(value, edge, v, delta)
+                            }
+                            RenderStyle::LifeHighlight => {
+                                palette::lenia_life_highlight(value, edge, v, delta)
+                            }
+                            RenderStyle::RawMath => unreachable!(),
+                        }
                     }
                 };
                 out[i * 4..i * 4 + 4].copy_from_slice(&rgba);

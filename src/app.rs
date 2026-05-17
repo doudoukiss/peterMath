@@ -60,6 +60,7 @@ pub struct PeterMathApp {
     comparison_result: Option<RuleVariantComparison>,
     comparison_baseline_texture: Option<TextureHandle>,
     comparison_variant_texture: Option<TextureHandle>,
+    feedback_pulse: Option<FeedbackPulse>,
     status: String,
     last_tick: Instant,
 }
@@ -112,6 +113,20 @@ enum MissionStatus {
     NotStarted,
     Active,
     Completed,
+}
+
+#[derive(Clone)]
+struct FeedbackPulse {
+    message: String,
+    kind: FeedbackKind,
+    expires_at: Instant,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FeedbackKind {
+    Info,
+    Success,
+    Warning,
 }
 
 #[derive(Clone, Copy)]
@@ -322,7 +337,7 @@ fn show_scenes() -> [ShowScene; 7] {
             title_zh: "Lenia 是连续生命场",
             duration_secs: 15.0,
             preset: LeniaPreset::OrbitalField,
-            render_style: RenderStyle::Artistic,
+            render_style: RenderStyle::LifeHighlight,
             step_rate: 1,
             narration: ShowNarration {
                 core_question_zh: "一个连续数值场，能不能像生命一样形成、移动和衰退？",
@@ -343,7 +358,7 @@ fn show_scenes() -> [ShowScene; 7] {
             title_zh: "轨道场：局部卷积生成漂移",
             duration_secs: 30.0,
             preset: LeniaPreset::OrbitalField,
-            render_style: RenderStyle::Artistic,
+            render_style: RenderStyle::LifeHighlight,
             step_rate: 1,
             narration: ShowNarration {
                 core_question_zh: "为什么一个固定公式会产生持续漂移，而不是静止图案？",
@@ -365,7 +380,7 @@ fn show_scenes() -> [ShowScene; 7] {
             title_zh: "双生命体：同一场中的相互影响",
             duration_secs: 30.0,
             preset: LeniaPreset::TwinOrganisms,
-            render_style: RenderStyle::Artistic,
+            render_style: RenderStyle::LifeHighlight,
             step_rate: 1,
             narration: ShowNarration {
                 core_question_zh: "两个结构靠近时，为什么会互相影响而不是各自独立？",
@@ -386,7 +401,7 @@ fn show_scenes() -> [ShowScene; 7] {
             title_zh: "卷积核环：半径决定形体尺度",
             duration_secs: 30.0,
             preset: LeniaPreset::KernelRing,
-            render_style: RenderStyle::Artistic,
+            render_style: RenderStyle::LifeHighlight,
             step_rate: 1,
             narration: ShowNarration {
                 core_question_zh: "为什么改变邻域半径就会改变作品的形体尺度？",
@@ -407,7 +422,7 @@ fn show_scenes() -> [ShowScene; 7] {
             title_zh: "密集开花：增长、饱和与湍动",
             duration_secs: 30.0,
             preset: LeniaPreset::DenseBloom,
-            render_style: RenderStyle::Artistic,
+            render_style: RenderStyle::LifeHighlight,
             step_rate: 1,
             narration: ShowNarration {
                 core_question_zh: "当生命量太多时，系统会稳定、爆发还是衰退？",
@@ -683,7 +698,7 @@ impl PeterMathApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         configure_style(&cc.egui_ctx);
         let width = 192;
-        let render_style = RenderStyle::Artistic;
+        let render_style = RenderStyle::LifeHighlight;
         let lenia = LeniaSim::new(width, width, 1001);
         let inspected_lenia = Some(lenia.inspect_point(width / 2, width / 2));
         let initial_metrics = lenia.metrics();
@@ -756,6 +771,7 @@ impl PeterMathApp {
             comparison_result: None,
             comparison_baseline_texture: None,
             comparison_variant_texture: None,
+            feedback_pulse: None,
             status: if gpu_ready {
                 "任务模式已开始：先让生命场运行，完成“唤醒生命场”。".to_owned()
             } else {
@@ -899,6 +915,24 @@ impl PeterMathApp {
             let mission = mission_definition(id);
             self.teaching_game.complete(id);
             self.status = mission.success_zh.to_owned();
+            self.trigger_feedback(FeedbackKind::Success, mission.success_zh);
+        }
+    }
+
+    fn trigger_feedback(&mut self, kind: FeedbackKind, message: impl Into<String>) {
+        self.feedback_pulse = Some(FeedbackPulse {
+            message: message.into(),
+            kind,
+            expires_at: Instant::now() + Duration::from_secs_f32(2.4),
+        });
+    }
+
+    fn current_feedback_pulse(&self) -> Option<&FeedbackPulse> {
+        let pulse = self.feedback_pulse.as_ref()?;
+        if Instant::now() <= pulse.expires_at {
+            Some(pulse)
+        } else {
+            None
         }
     }
 
@@ -937,6 +971,10 @@ impl PeterMathApp {
             .reset_for_mission(id, self.step_count, metrics, self.render_style);
         self.info_tab = MainInfoTab::ShowNarration;
         self.status = format!("任务开始：{}。{}", mission.title_zh, mission.goal_zh);
+        self.trigger_feedback(
+            FeedbackKind::Info,
+            format!("任务开始：{} · {}", mission.title_zh, mission.scenario_zh),
+        );
     }
 
     fn next_mission_id(&self) -> Option<MissionId> {
@@ -1268,7 +1306,10 @@ impl PeterMathApp {
             Ok(())
         })();
         self.status = match result {
-            Ok(()) => format!("已导出 {} 和 {}", png_path, json_path),
+            Ok(()) => {
+                self.trigger_feedback(FeedbackKind::Success, "已导出截图和参数");
+                format!("已导出 {} 和 {}", png_path, json_path)
+            }
             Err(err) => format!("导出失败：{err}"),
         };
     }
@@ -1345,7 +1386,10 @@ impl PeterMathApp {
             Ok(())
         })();
         self.status = match result {
-            Ok(()) => format!("已导出 {} 和 {}", png_path, json_path),
+            Ok(()) => {
+                self.trigger_feedback(FeedbackKind::Success, "已导出 GPU 截图和参数");
+                format!("已导出 {} 和 {}", png_path, json_path)
+            }
             Err(err) => format!("GPU 导出失败：{err}"),
         };
     }
@@ -1390,6 +1434,7 @@ impl PeterMathApp {
         self.status = match result {
             Ok(()) => {
                 self.update_teaching_progress();
+                self.trigger_feedback(FeedbackKind::Success, "已生成可复现状态证据");
                 "已导出 peterMath_share_state.json。".to_owned()
             }
             Err(err) => {
@@ -1463,6 +1508,7 @@ impl PeterMathApp {
         self.status = match result {
             Ok(pack) => {
                 self.update_teaching_progress();
+                self.trigger_feedback(FeedbackKind::Success, "已生成证据包");
                 format!(
                     "已导出证据包：{}（PNG {}，JSON {}，可复现状态 {}，摘要 {}）",
                     pack.dir.display(),
@@ -1866,6 +1912,7 @@ impl PeterMathApp {
         if !self.pointer_edit_active {
             self.push_lenia_history();
             self.pointer_edit_active = true;
+            self.trigger_feedback(FeedbackKind::Info, "正在塑造生命场");
         }
 
         match self.tool {
@@ -1985,6 +2032,56 @@ impl PeterMathApp {
             );
             painter.circle_filled(center, 3.2, Color32::from_rgb(216, 240, 139));
         }
+    }
+
+    fn draw_tool_preview(
+        &self,
+        painter: &egui::Painter,
+        rect: egui::Rect,
+        response: &egui::Response,
+    ) {
+        if self.tool == InteractionTool::Pan {
+            return;
+        }
+        let Some(pos) = response
+            .hover_pos()
+            .or_else(|| response.interact_pointer_pos())
+        else {
+            return;
+        };
+        if !rect.contains(pos) {
+            return;
+        }
+        let (w, _) = self.lenia.size();
+        let radius = (self.brush_radius / w as f32 * rect.width()).clamp(3.0, 96.0);
+        let color = tool_color(self.tool);
+        painter.circle_filled(
+            pos,
+            radius,
+            Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 28),
+        );
+        painter.circle_stroke(
+            pos,
+            radius,
+            egui::Stroke::new(
+                1.8,
+                Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 210),
+            ),
+        );
+        painter.circle_filled(pos, 3.0, color);
+        let label = match self.tool {
+            InteractionTool::Draw => "绘制",
+            InteractionTool::Erase => "擦除",
+            InteractionTool::Stamp => "盖章",
+            InteractionTool::Pan => "",
+        };
+        painter.text(
+            pos + egui::vec2(10.0, -10.0),
+            egui::Align2::LEFT_BOTTOM,
+            label,
+            egui::TextStyle::Small.resolve(&painter.ctx().style()),
+            color,
+        );
     }
 
     fn lenia_inspection_json(&self) -> serde_json::Value {
@@ -2292,22 +2389,26 @@ impl PeterMathApp {
         let progress = self.current_mission_progress();
         let progress_value = mission_progress_fraction(self.teaching_game.active_mission, progress);
         ui.heading("任务模式");
-        ui.strong(mission.title_zh);
-        ui.small(format!("场景：{}", mission.scenario_zh));
-        ui.add(egui::ProgressBar::new(progress_value).text(format!(
-            "{} · {:.0}%",
-            self.current_mission_status().label(),
-            progress_value * 100.0
-        )));
-        ui.label(mission.goal_zh);
+        mission_header_card(
+            ui,
+            mission.title_zh,
+            mission.scenario_zh,
+            mission.goal_zh,
+            self.current_mission_status(),
+            progress_value,
+        );
 
         ui.horizontal(|ui| {
-            if ui.button("重玩本任务").clicked() {
+            if arcade_button(ui, "重玩", arcade_accent_warning()).clicked() {
                 self.start_teaching_mission(self.teaching_game.active_mission);
             }
             let enabled = self.next_mission_id().is_some();
             if ui
-                .add_enabled(enabled, egui::Button::new("下一任务"))
+                .add_enabled(
+                    enabled,
+                    egui::Button::new(egui::RichText::new("下一任务").strong())
+                        .fill(arcade_accent_primary()),
+                )
                 .clicked()
             {
                 if let Some(next) = self.next_mission_id() {
@@ -2319,17 +2420,15 @@ impl PeterMathApp {
         ui.separator();
         for mission in mission_definitions() {
             let is_active = mission.id == self.teaching_game.active_mission;
-            let marker = if self.teaching_game.is_completed(mission.id) {
-                "已完成"
+            let completed = self.teaching_game.is_completed(mission.id);
+            let status = if completed {
+                MissionStatus::Completed
             } else if is_active {
-                "进行中"
+                self.current_mission_status()
             } else {
-                "未开始"
+                MissionStatus::NotStarted
             };
-            if ui
-                .selectable_label(is_active, format!("{} · {}", marker, mission.title_zh))
-                .clicked()
-            {
+            if mission_card(ui, mission, status, is_active, completed) {
                 self.start_teaching_mission(mission.id);
             }
         }
@@ -2346,7 +2445,17 @@ impl PeterMathApp {
         ui.heading("行动");
         ui.horizontal(|ui| {
             if ui
-                .button(if self.running { "暂停" } else { "运行" })
+                .add_sized(
+                    [86.0, 34.0],
+                    egui::Button::new(
+                        egui::RichText::new(if self.running { "暂停" } else { "运行" }).strong(),
+                    )
+                    .fill(if self.running {
+                        arcade_accent_warning()
+                    } else {
+                        arcade_accent_success()
+                    }),
+                )
                 .clicked()
             {
                 let was_running = self.running;
@@ -2354,13 +2463,13 @@ impl PeterMathApp {
                 self.running = !was_running;
                 self.show_mode.playing = false;
             }
-            if ui.button("单步").clicked() {
+            if arcade_button(ui, "单步", arcade_accent_primary()).clicked() {
                 self.pause_show_for_manual_interaction();
                 self.show_mode.playing = false;
                 self.running = false;
                 self.step_once();
             }
-            if ui.button("重置").clicked() {
+            if arcade_button(ui, "重置", arcade_panel_mid()).clicked() {
                 self.pause_show_for_manual_interaction();
                 self.reset_lenia_with_history();
             }
@@ -2379,6 +2488,11 @@ impl PeterMathApp {
                     &mut selected_render_style,
                     RenderStyle::Artistic,
                     RenderStyle::Artistic.label(),
+                );
+                ui.selectable_value(
+                    &mut selected_render_style,
+                    RenderStyle::LifeHighlight,
+                    RenderStyle::LifeHighlight.label(),
                 );
             });
         if selected_render_style != self.render_style {
@@ -2400,8 +2514,13 @@ impl PeterMathApp {
                     InteractionTool::Stamp => "S",
                     InteractionTool::Pan => "安全光标",
                 };
-                ui.selectable_value(&mut self.tool, tool, tool.label())
-                    .on_hover_text(shortcut);
+                let selected = self.tool == tool;
+                if tool_chip(ui, tool.label(), selected, tool_color(tool))
+                    .on_hover_text(shortcut)
+                    .clicked()
+                {
+                    self.tool = tool;
+                }
             }
         });
 
@@ -2426,11 +2545,11 @@ impl PeterMathApp {
         }
 
         ui.horizontal(|ui| {
-            if ui.button("清空场").clicked() {
+            if arcade_button(ui, "清空场", arcade_panel_mid()).clicked() {
                 self.pause_show_for_manual_interaction();
                 self.clear_lenia_field();
             }
-            if ui.button("新种子").clicked() {
+            if arcade_button(ui, "新种子", arcade_accent_primary()).clicked() {
                 self.pause_show_for_manual_interaction();
                 self.new_lenia_seed();
             }
@@ -2622,6 +2741,7 @@ impl PeterMathApp {
         if lenia_changed {
             self.pause_show_for_manual_interaction();
             self.teaching_game.parameter_changed_since_start = true;
+            self.trigger_feedback(FeedbackKind::Warning, "规则参数已改变");
             self.sync_gpu_lenia_from_cpu();
             self.step_count = 0;
             self.mark_cpu_texture_dirty();
@@ -2672,7 +2792,8 @@ impl PeterMathApp {
     fn draw_central_explanation_bar(&self, ui: &mut egui::Ui) {
         let phase = self.lenia_phase();
         egui::Frame::group(ui.style())
-            .fill(Color32::from_rgb(9, 13, 15))
+            .fill(arcade_panel_deep())
+            .stroke(egui::Stroke::new(1.0, arcade_stroke()))
             .show(ui, |ui| {
                 if self.show_mode.enabled {
                     let scene = self.current_show_scene();
@@ -2690,7 +2811,7 @@ impl PeterMathApp {
                         self.current_mission_progress(),
                     );
                     ui.horizontal_wrapped(|ui| {
-                        ui.colored_label(Color32::from_rgb(100, 232, 218), "任务模式");
+                        status_chip(ui, "任务模式", arcade_accent_primary());
                         ui.strong(mission.title_zh);
                         ui.separator();
                         ui.label(mission.goal_zh);
@@ -2699,6 +2820,14 @@ impl PeterMathApp {
                         egui::ProgressBar::new(progress)
                             .text(format!("任务进度 {:.0}%", progress * 100.0)),
                     );
+                    ui.horizontal_wrapped(|ui| {
+                        ui.small("下一步");
+                        ui.colored_label(arcade_accent_warning(), mission_next_hint(mission.id));
+                    });
+                    if let Some(pulse) = self.current_feedback_pulse() {
+                        ui.separator();
+                        status_chip(ui, &pulse.message, feedback_color(pulse.kind));
+                    }
                 }
                 ui.small(format!(
                     "当前阶段：{} · {}",
@@ -2750,40 +2879,35 @@ impl PeterMathApp {
                 .is_completed(self.teaching_game.active_mission);
 
         ui.heading("任务反馈");
-        ui.small(mission.scenario_zh);
-        ui.strong(mission.title_zh);
-        ui.add(egui::ProgressBar::new(progress_value).text(format!(
-            "{} · {:.0}%",
-            self.current_mission_status().label(),
-            progress_value * 100.0
-        )));
-        explanation_row(ui, "目标", mission.goal_zh);
+        mission_header_card(
+            ui,
+            mission.title_zh,
+            mission.scenario_zh,
+            mission.goal_zh,
+            self.current_mission_status(),
+            progress_value,
+        );
         ui.horizontal(|ui| {
-            if ui.button("提示").clicked() {
+            if arcade_button(ui, "提示", arcade_accent_primary()).clicked() {
                 self.teaching_game.show_hint = !self.teaching_game.show_hint;
             }
             if completed {
                 if let Some(next) = self.next_mission_id() {
-                    if ui.button("进入下一任务").clicked() {
+                    if arcade_button(ui, "进入下一任务", arcade_accent_success()).clicked() {
                         self.start_teaching_mission(next);
                     }
                 }
             }
         });
         if self.teaching_game.show_hint {
-            explanation_row(ui, "提示", mission.hint_zh);
+            state_card(ui, "提示", mission.hint_zh, arcade_accent_warning());
         }
         if completed {
-            explanation_row(ui, "成功", mission.success_zh);
+            state_card(ui, "成功", mission.success_zh, arcade_accent_success());
             ui.separator();
-            ui.heading("数学卡片");
-            explanation_row(ui, "本关结论", mission.takeaway_zh);
-            formula_card(
-                ui,
-                "u_next = clamp(u + dt*(G(K*u) - damping*u), 0, 1)",
-                "u 是生命量；K*u 是邻域平均；G 是增长响应；damping 是衰减。",
-                "任务中的操作只改变场、参数或显示方式，下一步仍由同一个 Lenia 规则计算。",
-            );
+            math_unlock_card(ui, mission.takeaway_zh);
+        } else {
+            locked_math_card(ui);
         }
 
         ui.separator();
@@ -3118,6 +3242,16 @@ impl eframe::App for PeterMathApp {
             ctx.request_repaint_after(TARGET_TICK);
         }
         self.update_teaching_progress();
+        if self
+            .feedback_pulse
+            .as_ref()
+            .is_some_and(|pulse| Instant::now() > pulse.expires_at)
+        {
+            self.feedback_pulse = None;
+        }
+        if self.feedback_pulse.is_some() {
+            ctx.request_repaint_after(Duration::from_millis(100));
+        }
 
         egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -3175,6 +3309,7 @@ impl eframe::App for PeterMathApp {
                         self.apply_lenia_brush(rect, &response);
                         self.draw_lenia_inspection_overlay(ui.painter(), rect);
                         self.draw_active_region_overlay(ui.painter(), rect);
+                        self.draw_tool_preview(ui.painter(), rect, &response);
                     });
                     render_duration += render_start.elapsed();
                 } else {
@@ -3212,6 +3347,7 @@ impl eframe::App for PeterMathApp {
                             self.apply_lenia_brush(rect, &response);
                             self.draw_lenia_inspection_overlay(ui.painter(), rect);
                             self.draw_active_region_overlay(ui.painter(), rect);
+                            self.draw_tool_preview(ui.painter(), rect, &response);
                         });
                     }
                 }
@@ -3310,6 +3446,7 @@ impl TeachingGameState {
         match render_style {
             RenderStyle::RawMath => self.raw_view_seen = true,
             RenderStyle::Artistic => self.artistic_view_seen = true,
+            RenderStyle::LifeHighlight => {}
         }
     }
 
@@ -3671,13 +3808,16 @@ fn configure_style(ctx: &egui::Context) {
     configure_chinese_fonts(ctx);
     let mut style = (*ctx.style()).clone();
     style.visuals = egui::Visuals::dark();
-    style.visuals.panel_fill = Color32::from_rgb(12, 16, 18);
-    style.visuals.window_fill = Color32::from_rgb(9, 12, 14);
-    style.visuals.extreme_bg_color = Color32::from_rgb(4, 6, 7);
-    style.visuals.widgets.noninteractive.bg_fill = Color32::from_rgb(18, 24, 27);
-    style.visuals.widgets.inactive.bg_fill = Color32::from_rgb(24, 32, 36);
-    style.visuals.selection.bg_fill = Color32::from_rgb(60, 116, 106);
-    style.spacing.item_spacing = egui::vec2(8.0, 8.0);
+    style.visuals.panel_fill = Color32::from_rgb(10, 15, 20);
+    style.visuals.window_fill = arcade_panel_deep();
+    style.visuals.extreme_bg_color = Color32::from_rgb(3, 5, 8);
+    style.visuals.widgets.noninteractive.bg_fill = arcade_panel_mid();
+    style.visuals.widgets.inactive.bg_fill = Color32::from_rgb(27, 39, 47);
+    style.visuals.widgets.hovered.bg_fill = Color32::from_rgb(35, 56, 65);
+    style.visuals.widgets.active.bg_fill = Color32::from_rgb(43, 82, 90);
+    style.visuals.selection.bg_fill = Color32::from_rgb(48, 138, 143);
+    style.spacing.item_spacing = egui::vec2(8.0, 9.0);
+    style.spacing.button_padding = egui::vec2(10.0, 7.0);
     style.spacing.slider_width = 170.0;
     ctx.set_style(style);
 }
@@ -3868,6 +4008,229 @@ fn yes_no(value: bool) -> &'static str {
     }
 }
 
+fn arcade_panel_deep() -> Color32 {
+    Color32::from_rgb(7, 11, 15)
+}
+
+fn arcade_panel_mid() -> Color32 {
+    Color32::from_rgb(24, 35, 42)
+}
+
+fn arcade_panel_hot() -> Color32 {
+    Color32::from_rgb(18, 31, 36)
+}
+
+fn arcade_stroke() -> Color32 {
+    Color32::from_rgb(45, 78, 86)
+}
+
+fn arcade_accent_primary() -> Color32 {
+    Color32::from_rgb(69, 218, 231)
+}
+
+fn arcade_accent_success() -> Color32 {
+    Color32::from_rgb(139, 242, 112)
+}
+
+fn arcade_accent_warning() -> Color32 {
+    Color32::from_rgb(255, 207, 92)
+}
+
+fn arcade_accent_danger() -> Color32 {
+    Color32::from_rgb(255, 105, 143)
+}
+
+fn feedback_color(kind: FeedbackKind) -> Color32 {
+    match kind {
+        FeedbackKind::Info => arcade_accent_primary(),
+        FeedbackKind::Success => arcade_accent_success(),
+        FeedbackKind::Warning => arcade_accent_warning(),
+    }
+}
+
+fn mission_status_color(status: MissionStatus) -> Color32 {
+    match status {
+        MissionStatus::NotStarted => Color32::from_rgb(135, 153, 160),
+        MissionStatus::Active => arcade_accent_primary(),
+        MissionStatus::Completed => arcade_accent_success(),
+    }
+}
+
+fn tool_color(tool: InteractionTool) -> Color32 {
+    match tool {
+        InteractionTool::Draw => arcade_accent_success(),
+        InteractionTool::Erase => arcade_accent_danger(),
+        InteractionTool::Stamp => arcade_accent_warning(),
+        InteractionTool::Pan => arcade_accent_primary(),
+    }
+}
+
+fn mission_next_hint(id: MissionId) -> &'static str {
+    match id {
+        MissionId::WakeField => "点击运行，等待 60 步",
+        MissionId::ShapeLife => "选择绘制或盖章，点一下画布",
+        MissionId::TuneRule => "改一个参数，再运行 80 步",
+        MissionId::SameField => "切换原始图和艺术图，移动鼠标检查",
+        MissionId::EvidenceReport => "导出可复现状态或证据包",
+    }
+}
+
+fn arcade_button(ui: &mut egui::Ui, label: &str, fill: Color32) -> egui::Response {
+    ui.add_sized(
+        [76.0, 32.0],
+        egui::Button::new(egui::RichText::new(label).strong()).fill(fill),
+    )
+}
+
+fn tool_chip(ui: &mut egui::Ui, label: &str, selected: bool, accent: Color32) -> egui::Response {
+    let fill = if selected {
+        Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 64)
+    } else {
+        arcade_panel_mid()
+    };
+    ui.add(
+        egui::Button::new(egui::RichText::new(label).color(if selected {
+            Color32::WHITE
+        } else {
+            Color32::from_rgb(198, 213, 218)
+        }))
+        .fill(fill)
+        .stroke(egui::Stroke::new(1.0, accent)),
+    )
+}
+
+fn status_chip(ui: &mut egui::Ui, label: &str, accent: Color32) {
+    ui.horizontal_wrapped(|ui| {
+        ui.colored_label(accent, "●");
+        ui.colored_label(accent, egui::RichText::new(label).strong());
+    });
+}
+
+fn state_card(ui: &mut egui::Ui, label: &str, text: &str, accent: Color32) {
+    egui::Frame::group(ui.style())
+        .fill(Color32::from_rgba_unmultiplied(
+            accent.r(),
+            accent.g(),
+            accent.b(),
+            24,
+        ))
+        .stroke(egui::Stroke::new(1.0, accent))
+        .show(ui, |ui| {
+            ui.colored_label(accent, label);
+            ui.label(text);
+        });
+}
+
+fn mission_header_card(
+    ui: &mut egui::Ui,
+    title: &str,
+    scenario: &str,
+    goal: &str,
+    status: MissionStatus,
+    progress: f32,
+) {
+    let accent = mission_status_color(status);
+    egui::Frame::group(ui.style())
+        .fill(arcade_panel_hot())
+        .stroke(egui::Stroke::new(1.2, accent))
+        .show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                status_chip(ui, status.label(), accent);
+                ui.strong(title);
+            });
+            ui.small(format!("场景：{scenario}"));
+            ui.label(goal);
+            ui.add(egui::ProgressBar::new(progress).text(format!("{:.0}%", progress * 100.0)));
+        });
+}
+
+fn mission_card(
+    ui: &mut egui::Ui,
+    mission: MissionDefinition,
+    status: MissionStatus,
+    active: bool,
+    completed: bool,
+) -> bool {
+    let accent = if completed {
+        arcade_accent_success()
+    } else if active {
+        arcade_accent_primary()
+    } else {
+        Color32::from_rgb(93, 113, 120)
+    };
+    let fill = if active {
+        Color32::from_rgb(19, 40, 47)
+    } else {
+        arcade_panel_mid()
+    };
+    let mut clicked = false;
+    egui::Frame::group(ui.style())
+        .fill(fill)
+        .stroke(egui::Stroke::new(if active { 1.8 } else { 1.0 }, accent))
+        .show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.colored_label(
+                    accent,
+                    if completed {
+                        "✓"
+                    } else if active {
+                        "▶"
+                    } else {
+                        "○"
+                    },
+                );
+                ui.strong(mission.title_zh);
+                ui.small(status.label());
+            });
+            ui.small(mission.scenario_zh);
+            if ui
+                .add_sized(
+                    [ui.available_width(), 28.0],
+                    egui::Button::new(if active {
+                        "当前任务"
+                    } else {
+                        "切换到此任务"
+                    })
+                    .fill(if active {
+                        arcade_accent_primary()
+                    } else {
+                        arcade_panel_deep()
+                    }),
+                )
+                .clicked()
+            {
+                clicked = true;
+            }
+        });
+    clicked
+}
+
+fn locked_math_card(ui: &mut egui::Ui) {
+    egui::Frame::group(ui.style())
+        .fill(Color32::from_rgb(15, 19, 23))
+        .stroke(egui::Stroke::new(1.0, Color32::from_rgb(62, 74, 80)))
+        .show(ui, |ui| {
+            ui.colored_label(Color32::from_rgb(145, 162, 168), "数学卡片未解锁");
+            ui.small("完成当前目标后，这里会显示本关数学结论。");
+        });
+}
+
+fn math_unlock_card(ui: &mut egui::Ui, takeaway: &str) {
+    egui::Frame::group(ui.style())
+        .fill(Color32::from_rgb(12, 31, 26))
+        .stroke(egui::Stroke::new(1.2, arcade_accent_success()))
+        .show(ui, |ui| {
+            ui.colored_label(arcade_accent_success(), "数学卡片已解锁");
+            ui.label(takeaway);
+            formula_card(
+                ui,
+                "u_next = clamp(u + dt*(G(K*u) - damping*u), 0, 1)",
+                "u 是生命量；K*u 是邻域平均；G 是增长响应；damping 是衰减。",
+                "任务中的操作只改变场、参数或显示方式，下一步仍由同一个 Lenia 规则计算。",
+            );
+        });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3936,6 +4299,13 @@ mod tests {
             assert!((1..=8).contains(&mission.step_rate));
         }
         assert_eq!(ids.len(), 5);
+    }
+
+    #[test]
+    fn render_styles_include_life_highlight_label() {
+        assert_eq!(RenderStyle::RawMath.label(), "数学原始图");
+        assert_eq!(RenderStyle::Artistic.label(), "艺术表达图");
+        assert_eq!(RenderStyle::LifeHighlight.label(), "生命高光图");
     }
 
     #[test]

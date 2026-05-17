@@ -33,7 +33,7 @@ The judging story is native-first and Chinese-first. The app should first feel l
 - Main identity: Lenia as a mathematical life teaching game.
 - Rendering: GPU Lenia is primary; CPU Lenia remains fallback/reference for metrics, inspector, exports, and manual validation.
 - Interaction: run, draw, erase, stamp, switch view, tune rule, inspect a point, and export evidence as mission actions.
-- Explanation: mission objective, feedback, hint, unlocked math card, field inspector, kernel lens, phase labels, and metric history.
+- Explanation: mission objective, feedback pulse, hint, unlocked math card, field inspector, kernel lens, phase labels, and metric history.
 - Interpretability: active-region analysis, population phase trends, point inspection, Lenia rule variant comparison, and mission progress.
 - Performance: diagnostics, bounded scheduler, CPU texture dirty tracking, and `perf_probe`.
 - Shareability: PNG/JSON snapshot export, share-state JSON, evidence packs, generated Lenia previews, and offline web fallback.

@@ -16,7 +16,7 @@ The native Rust executable is primary. The static web page is a smaller offline 
 
 - The app opens in `任务模式`.
 - Each mission has one visible goal, one hint, one progress bar, one success message, and one short math takeaway.
-- The simulation canvas remains the dominant screen element.
+- The simulation canvas remains the dominant screen element, with `生命高光图` as the default mission-play rendering style.
 - Expert controls exist, but they are secondary to mission play.
 - `自动讲解` remains available for presentation, but it is not the default path.
 
@@ -52,6 +52,7 @@ The native Rust executable is primary. The static web page is a smaller offline 
 - Left panel: title, current mission, mission list, run/pause/reset, tool buttons, simple seed/display controls, collapsed expert/evidence controls.
 - Center: objective bar, large simulation canvas, compact status line.
 - Right panel: mission feedback, hint, unlocked math card, live metrics, and collapsed expert diagnostics.
+- Canvas: draw/erase/stamp show a cursor-radius preview so field edits feel tactile.
 - Top bar: project name, `任务模式`, current mission, backend, seed, step count, and phase.
 
 ## Copy Tone
@@ -67,6 +68,13 @@ Chinese is primary. Use short action-oriented labels:
 - `专家设置`
 
 Avoid making the primary UI sound like a technical demo, research lab, or pure artwork. Expert panels may still use precise terms such as field, kernel, growth response, damping, metrics, and inspector.
+
+## Arcade Science Feel
+
+- Mission rows are cards with active/completed states.
+- The central HUD shows current mission, next action, progress, and short feedback pulses.
+- Success, warning, and info states use distinct accents.
+- `生命高光图` emphasizes birth/decay changes while staying derived from the same scalar field.
 
 ## Export Behavior
 

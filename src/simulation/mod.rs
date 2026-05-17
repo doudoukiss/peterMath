@@ -4,6 +4,7 @@ pub mod lenia;
 pub enum RenderStyle {
     RawMath,
     Artistic,
+    LifeHighlight,
 }
 
 impl RenderStyle {
@@ -11,6 +12,7 @@ impl RenderStyle {
         match self {
             RenderStyle::RawMath => "数学原始图",
             RenderStyle::Artistic => "艺术表达图",
+            RenderStyle::LifeHighlight => "生命高光图",
         }
     }
 }

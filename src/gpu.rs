@@ -516,19 +516,24 @@ pub fn colorize_fields(
             let value = field[i].clamp(0.0, 1.0);
             let rgba = match render_style {
                 RenderStyle::RawMath => palette::raw_gray(value),
-                RenderStyle::Artistic => {
+                RenderStyle::Artistic | RenderStyle::LifeHighlight => {
                     let gx = field[y * size + ((x + 1) % size)]
                         - field[y * size + ((x + size - 1) % size)];
                     let gy = field[((y + 1) % size) * size + x]
                         - field[((y + size - 1) % size) * size + x];
                     let edge = (gx * gx + gy * gy).sqrt() * 3.0;
                     let prior = previous.get(i).copied().unwrap_or(value);
-                    palette::lenia_field_delta(
-                        (value * 1.30).clamp(0.0, 1.0),
-                        edge,
-                        value,
-                        value - prior,
-                    )
+                    let value = (value * 1.30).clamp(0.0, 1.0);
+                    let delta = field[i] - prior;
+                    match render_style {
+                        RenderStyle::Artistic => {
+                            palette::lenia_field_delta(value, edge, field[i], delta)
+                        }
+                        RenderStyle::LifeHighlight => {
+                            palette::lenia_life_highlight(value, edge, field[i], delta)
+                        }
+                        RenderStyle::RawMath => unreachable!(),
+                    }
                 }
             };
             out[i * 4..i * 4 + 4].copy_from_slice(&rgba);
@@ -675,6 +680,7 @@ fn params_bytes(
         match render_style {
             RenderStyle::RawMath => 0,
             RenderStyle::Artistic => 1,
+            RenderStyle::LifeHighlight => 2,
         },
     );
     write_u32(&mut bytes, 12, 0);
@@ -807,6 +813,23 @@ fn lenia_palette(value: f32, edge: f32, delta: f32) -> vec3<f32> {
     );
 }
 
+fn lenia_life_palette(value: f32, edge: f32, delta: f32) -> vec3<f32> {
+    let x = clamp(value, 0.0, 1.0);
+    let ridge = smooth_step(0.008, 0.14, edge);
+    let contour_distance = abs(fract(x * 23.0) - 0.5);
+    let contour = 1.0 - smooth_step(0.018, 0.14, contour_distance);
+    let glow = smooth_step(0.018, 0.72, x);
+    let core = smooth_step(0.46, 0.98, x);
+    let birth = smooth_step(0.001, 0.045, max(delta, 0.0));
+    let decay = smooth_step(0.001, 0.050, max(-delta, 0.0));
+    let pulse = clamp(0.55 * birth + 0.45 * decay, 0.0, 1.0);
+    return vec3<f32>(
+        0.020 + 0.20 * glow + 0.62 * core + 0.28 * contour + 0.18 * ridge + 0.78 * decay,
+        0.045 + 0.56 * glow + 0.22 * core + 0.35 * contour + 0.22 * ridge + 0.62 * birth,
+        0.080 + 0.64 * glow + 0.14 * core + 0.30 * contour + 0.50 * ridge + 0.52 * pulse
+    );
+}
+
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let uv = clamp(in.uv, vec2<f32>(0.0, 0.0), vec2<f32>(0.9999, 0.9999));
@@ -822,7 +845,12 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let gy = sample_field(x, y + 1) - sample_field(x, y - 1);
     let edge = sqrt(gx * gx + gy * gy) * 3.0;
     let index = u32(y) * params.size + u32(x);
-    let color = clamp(lenia_palette(value * 1.3, edge, value - previous_field[index]), vec3<f32>(0.0), vec3<f32>(1.0));
+    let delta = value - previous_field[index];
+    if (params.render_style == 2u) {
+        let color = clamp(lenia_life_palette(value * 1.3, edge, delta), vec3<f32>(0.0), vec3<f32>(1.0));
+        return vec4<f32>(color, 1.0);
+    }
+    let color = clamp(lenia_palette(value * 1.3, edge, delta), vec3<f32>(0.0), vec3<f32>(1.0));
     return vec4<f32>(color, 1.0);
 }
 "#;

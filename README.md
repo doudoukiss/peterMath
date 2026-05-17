@@ -9,7 +9,7 @@ This folder is the correct Git repository root.
 - The app opens into `任务模式`, a playable Lenia mission shell.
 - Five missions teach the core ideas: wake the field, shape life, tune a rule, prove Raw/Artistic views share one field, and export an evidence report.
 - The central canvas is a real-time continuous field, not a video.
-- `数学原始图` and `艺术表达图` show the same Lenia data in two visual languages.
+- `数学原始图`, `艺术表达图`, and `生命高光图` show the same Lenia data in different visual languages.
 - Brush, stamp, seed, presets, and sliders become teaching actions with immediate mission feedback.
 - The math card unlocks after play: `u`, `K*u`, growth response, damping, metrics, and inspector values explain what happened.
 - Expert/evidence panels still provide metrics, active region, rule-variant comparison, GPU/CPU diagnostics, PNG/JSON snapshots, share-state JSON, and evidence packs.
