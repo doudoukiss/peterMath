@@ -45,6 +45,21 @@ def parse_args() -> argparse.Namespace:
         default=os.environ.get("PETERMATH_OFFICIAL_NAME", DEFAULT_OFFICIAL_NAME),
         help="Folder name used inside the optional zip archive.",
     )
+    parser.add_argument(
+        "--school",
+        default=os.environ.get("PETERMATH_SCHOOL", "学校名称待填写"),
+        help="School name written into generated judge checklists.",
+    )
+    parser.add_argument(
+        "--group",
+        default=os.environ.get("PETERMATH_GROUP", "小学组/初中组待填写"),
+        help="Student group written into generated judge checklists.",
+    )
+    parser.add_argument(
+        "--student",
+        default=os.environ.get("PETERMATH_STUDENT", "学生姓名待填写"),
+        help="Student name written into generated judge checklists.",
+    )
     return parser.parse_args()
 
 
@@ -161,7 +176,7 @@ def judge_entry_html() -> str:
   <body>
     <main>
       <h1>peterMath：Lenia 数学生命教学游戏</h1>
-      <p>推荐评委先双击 <strong>START_WINDOWS.bat</strong> 或直接运行 <strong>peterMath.exe</strong>。打开后按任务卡完成：选工具、选任务、点生命场、看反馈、解锁数学卡片、导出证据。</p>
+      <p>推荐评委先双击 <strong>START_WINDOWS.bat</strong> 或直接运行 <strong>peterMath.exe</strong>。打开后按任务卡完成：<strong>1 选工具 / 2 选任务 / 3 点生命场</strong>，再看反馈、解锁数学卡片、导出证据。</p>
       <div class="status">本入口页只是说明和分流。正式作品是原生 Windows 程序；网页 fallback 只用于原生程序无法启动的电脑。</div>
       <ol>
         <li>主入口：运行 peterMath.exe，进入任务模式。</li>
@@ -191,12 +206,13 @@ def judge_readme(metadata: dict[str, str]) -> str:
 如果 peterMath.exe 在评审电脑上无法启动，请双击 打开备用网页.bat，或直接打开 web_html/index.html。网页版是离线 Lenia 教学游戏备用窗口；正式作品仍以 peterMath.exe 为主。
 
 建议 3 分钟评审路径：
-1. 唤醒生命场：运行并观察连续场自己演化。
-2. 塑造生命：选择绘制或盖章，点击/拖动生命场。
-3. 半径挑战：只改变一个规则参数并观察指标变化。
-4. 证明同一数据：切换数学原始图 / 艺术表达图，并用检查器看同一点。
-5. 生成证据报告：导出可复现状态或证据包。
-6. 如需完整旁白，再打开“自动讲解”。
+1. 先看首屏的 `1 选工具 / 2 选任务 / 3 点生命场`。
+2. 唤醒生命场：运行并观察连续场自己演化。
+3. 塑造生命：选择绘制或盖章，点击/拖动生命场。
+4. 半径挑战：只改变一个规则参数并观察指标变化。
+5. 证明同一数据：切换数学原始图 / 艺术表达图，并用检查器看同一点。
+6. 生成证据报告：导出可复现状态或证据包。
+7. 如需完整旁白，再打开“自动讲解”。
 
 作品说明：
 peterMath 不是预制动画，也不是只给专业人士看的技术面板。每一帧都由 Lenia 连续场规则实时计算生成。作品重点是把一个简单公式做成可玩的教学任务，让评委先操作，再通过数学卡片、指标和导出证据理解卷积核、增长函数、阻尼、seed 和交互如何产生生命感形态。
@@ -281,9 +297,9 @@ def main() -> int:
     exe_source = locate_executable(args.exe)
     metadata = {
         "official_name": args.official_name,
-        "school": os.environ.get("PETERMATH_SCHOOL", "学校名称待填写"),
-        "group": os.environ.get("PETERMATH_GROUP", "小学组/初中组待填写"),
-        "student": os.environ.get("PETERMATH_STUDENT", "学生姓名待填写"),
+        "school": args.school,
+        "group": args.group,
+        "student": args.student,
     }
 
     if out_dir.exists():

@@ -157,7 +157,7 @@ Tasks:
 1. Inspect `.github/workflows/windows-release.yml`.
 2. Ensure it builds on `windows-latest`.
 3. Ensure it uploads `peterMath-windows-x64`.
-4. Run `python3 scripts/package_submission.py --out dist/peterMath_windows_submission`.
+4. Run `python3 scripts/package_submission.py --out dist/peterMath_windows_submission`; use `--official-name`, `--school`, `--group`, and `--student` for final metadata when known.
 5. Include `peterMath.exe`, `START_WINDOWS.bat`, `双击运行-评委版.bat`, `打开备用网页.bat`, judge README, student explanation, screenshots/previews, assets, and `web_html/`.
 6. Note SmartScreen warning if code signing is not configured.
 

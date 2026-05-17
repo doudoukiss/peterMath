@@ -960,6 +960,17 @@ impl PeterMathApp {
         });
     }
 
+    fn select_interaction_tool(&mut self, tool: InteractionTool) {
+        if self.tool == tool {
+            return;
+        }
+        self.pause_show_for_manual_interaction();
+        self.tool = tool;
+        self.canvas_coachmark_visible = true;
+        self.status = format!("已选择工具：{}。现在点生命场观察反馈。", tool.label());
+        self.trigger_feedback(FeedbackKind::Info, format!("工具：{}", tool.label()));
+    }
+
     fn current_feedback_pulse(&self) -> Option<&FeedbackPulse> {
         let pulse = self.feedback_pulse.as_ref()?;
         if Instant::now() <= pulse.expires_at {
@@ -1991,7 +2002,6 @@ impl PeterMathApp {
         if response.clicked() || response.dragged() {
             self.canvas_coachmark_visible = false;
         }
-        self.draw_canvas_feedback_effect(painter, rect);
         if self.canvas_coachmark_visible && !self.show_mode.enabled {
             let mission = self.current_mission_definition();
             let width = rect.width().min(390.0);
@@ -2034,6 +2044,7 @@ impl PeterMathApp {
                 Color32::from_rgb(157, 177, 184),
             );
         }
+        self.draw_canvas_feedback_effect(painter, rect);
     }
 
     fn draw_canvas_feedback_effect(&self, painter: &egui::Painter, rect: egui::Rect) {
@@ -2553,6 +2564,21 @@ impl PeterMathApp {
             self.current_mission_status(),
             progress_value,
         );
+        ui.horizontal_wrapped(|ui| {
+            ui.small("1 选工具");
+            if tool_chip(
+                ui,
+                mission.tool.label(),
+                self.tool == mission.tool,
+                tool_color(mission.tool),
+            )
+            .on_hover_text("切到本任务推荐工具")
+            .clicked()
+            {
+                self.select_interaction_tool(mission.tool);
+            }
+            ui.small(format!("当前：{}", self.tool.label()));
+        });
 
         ui.horizontal(|ui| {
             if arcade_button(ui, "重玩", arcade_accent_warning()).clicked() {
@@ -2675,7 +2701,7 @@ impl PeterMathApp {
                     .on_hover_text(shortcut)
                     .clicked()
                 {
-                    self.tool = tool;
+                    self.select_interaction_tool(tool);
                 }
             }
         });

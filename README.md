@@ -36,6 +36,12 @@ python3 scripts/package_submission.py --out dist/peterMath_windows_submission
 cargo run --bin perf_probe
 ```
 
+Optional package metadata can be supplied with flags:
+
+```bash
+python3 scripts/package_submission.py --zip --official-name "学校-数学工程创意实践类-小学组-学生姓名" --school "学校名称" --group "小学组" --student "学生姓名"
+```
+
 Preview images are written to:
 
 ```text

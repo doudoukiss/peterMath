@@ -119,6 +119,12 @@ The workflow assembles this folder by running:
 python scripts/package_submission.py --exe target/release/peterMath.exe --out dist/peterMath_windows_submission
 ```
 
+For the final archive, add metadata flags:
+
+```bash
+python scripts/package_submission.py --exe target/release/peterMath.exe --out dist/peterMath_windows_submission --zip --official-name "学校-数学工程创意实践类-小学组-学生姓名" --school "学校名称" --group "小学组" --student "学生姓名"
+```
+
 ## Release checklist
 
 - [ ] Git repository root is `peterMath/`.
