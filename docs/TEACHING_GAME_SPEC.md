@@ -17,7 +17,9 @@ The native Rust executable is primary. The static web page is a smaller offline 
 - The app opens in `任务模式`.
 - Each mission has one visible goal, one hint, one progress bar, one success message, and one short math takeaway.
 - The simulation canvas remains the dominant screen element, with `生命高光图` as the default mission-play rendering style.
-- The first canvas view shows a small coachmark; field edits, parameter changes, mission completion, and exports create canvas-local feedback pulses.
+- The mission panel shows an actionable recommended-tool chip so `1 选工具` is a real control, not just instructional copy.
+- The first canvas view shows a small coachmark; field edits, tool changes, parameter changes, mission completion, and exports create canvas-local feedback pulses.
+- Canvas feedback pulses render above the coachmark so success/export messages are never hidden by first-run guidance.
 - A compact `看懂演化` strip explains `K*u`, `G(K*u)`, damping, same-field views, and seed/evidence after the canvas.
 - Expert controls exist, but they are secondary to mission play.
 - `自动讲解` remains available for presentation, but it is not the default path.
@@ -51,7 +53,7 @@ The native Rust executable is primary. The static web page is a smaller offline 
 
 ## Interface
 
-- Left panel: title, current mission, mission list, run/pause/reset, tool buttons, simple seed/display controls, collapsed expert/evidence controls.
+- Left panel: title, current mission, recommended tool, mission list, run/pause/reset, tool buttons, simple seed/display controls, collapsed expert/evidence controls.
 - Center: objective bar, large simulation canvas, compact status line, and `看懂演化` strip.
 - Right panel: mission feedback, hint, unlocked math card, live metrics, and collapsed expert diagnostics.
 - Canvas: draw/erase/stamp show a cursor-radius preview so field edits feel tactile.
@@ -98,6 +100,7 @@ Snapshot JSON, share-state JSON, and evidence packs keep existing fields and add
 
 - A fresh judge can start playing within seconds.
 - The native package includes `START_WINDOWS.bat`, `双击运行-评委版.bat`, `打开备用网页.bat`, `评委入口.html`, `web_html/`, screenshots/video/data placeholders, and a package manifest.
+- Package metadata can be supplied with `--official-name`, `--school`, `--group`, and `--student`; placeholder defaults are acceptable until final submission details are known.
 - The five missions can be completed in under three minutes by a prepared student presenter.
 - Existing Lenia simulation, deterministic presets, GPU/CPU paths, metrics, inspector, rule comparison, exports, and Windows artifact naming remain intact.
 - The fallback page opens directly from disk and uses the same mission names.

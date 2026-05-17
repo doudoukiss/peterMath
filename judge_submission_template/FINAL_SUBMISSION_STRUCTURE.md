@@ -48,4 +48,4 @@ Generate this folder with:
 python3 scripts/package_submission.py --out dist/peterMath_windows_submission
 ```
 
-Use `--zip --official-name "学校-数学工程创意实践类-小学组-学生姓名"` when preparing the final archive. The final explanation should describe only features that are actually implemented in the submitted `peterMath.exe`: mission-based teaching game, Lenia scenarios, GPU Lenia, CPU fallback, 数学原始图/艺术表达图/生命高光图, math cards, inspector, kernel lens, metrics, active-region analysis, Lenia rule variant comparison, performance diagnostics, and evidence exports.
+Use `--zip --official-name "学校-数学工程创意实践类-小学组-学生姓名" --school "学校名称" --group "小学组" --student "学生姓名"` when preparing the final archive. The final explanation should describe only features that are actually implemented in the submitted `peterMath.exe`: mission-based teaching game, Lenia scenarios, GPU Lenia, CPU fallback, 数学原始图/艺术表达图/生命高光图, math cards, inspector, kernel lens, metrics, active-region analysis, Lenia rule variant comparison, performance diagnostics, and evidence exports.

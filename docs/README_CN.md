@@ -68,6 +68,12 @@ cargo run --bin render_preview
 python3 scripts/package_submission.py --out dist/peterMath_windows_submission
 ```
 
+正式提交前可补充元数据：
+
+```bash
+python3 scripts/package_submission.py --out dist/peterMath_windows_submission --zip --official-name "学校-数学工程创意实践类-小学组-学生姓名" --school "学校名称" --group "小学组" --student "学生姓名"
+```
+
 3. 把 `docs/CODEX_PROMPTS_EN.md` 中的 Prompt 0 到 Prompt 12 按顺序交给 Codex。
 4. 每完成一个阶段都运行：
 
@@ -113,7 +119,7 @@ peterMath/judge_submission_template/
 ## 下一步优先级
 
 1. 先修好基础工程卫生：格式化、测试、`.gitignore`、GitHub Actions artifact 和打包脚本。
-2. 强化默认任务模式，让打开后 5 秒内知道 `1 选工具 / 2 选任务 / 3 点生命场`。
+2. 强化默认任务模式，让打开后 5 秒内知道 `1 选工具 / 2 选任务 / 3 点生命场`，并能直接点击推荐工具。
 3. 让五个任务覆盖运行、塑形、调参、同一数据证明和证据导出。
 4. 加强导出：PNG、参数 JSON、share-state JSON、evidence pack。
 5. 确认 GitHub Actions artifact 同时包含 `peterMath.exe`、Windows 启动脚本和 `web_html/`。

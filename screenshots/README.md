@@ -16,7 +16,7 @@ Use these files for judge-facing screenshots:
 
 - `lenia_hero.png`: main Lenia teaching-game field.
 - `lenia_showcase.png`: representative Lenia mission scenarios.
-- `judge_mode_reference.png`: mission cards, `1 选工具 / 2 选任务 / 3 点生命场`, Raw Math View, Artistic View, and mission/evidence panel.
+- `judge_mode_reference.png`: mission cards, recommended-tool chip, `1 选工具 / 2 选任务 / 3 点生命场`, Raw Math View, Artistic View, and mission/evidence panel.
 - `show_mode_storyboard.png`: secondary automatic explanation sequence.
 - `major_cases_gallery.png`: one-click scenario gallery.
 - `lenia_explanation_reference.png`: artistic field plus math card reference.

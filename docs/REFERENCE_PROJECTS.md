@@ -29,6 +29,7 @@ Look for examples of short interactive learning loops:
 `/Users/sonics/project/PeterHaipi` is the primary local reference for the next delivery pass. Use it for interaction and submission patterns only:
 
 - clear first path: `1 选工具 -> 2 选任务 -> 3 点画布`;
+- recommended tool/action chips that let the first step be clicked immediately;
 - canvas coachmark, hover/interaction preview, and click feedback;
 - mission cards that show status, recommended action, and completion;
 - math narration that unlocks after play;

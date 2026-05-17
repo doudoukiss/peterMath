@@ -137,7 +137,7 @@ python scripts/package_submission.py --exe target/release/peterMath.exe --out di
 - [ ] No local server is required.
 - [ ] Presets load without external files, or required files are included in the same folder.
 - [ ] 任务模式 opens first and automatic explanation remains available.
-- [ ] 首屏能看见 `1 选工具 / 2 选任务 / 3 点生命场`。
+- [ ] 首屏能看见 `1 选工具 / 2 选任务 / 3 点生命场`，且推荐工具 chip 可以点击。
 - [ ] Canvas coachmark and local feedback appear during first interaction.
 - [ ] Export works.
 - [ ] README tells judges exactly what to click first.

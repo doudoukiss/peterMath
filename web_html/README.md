@@ -22,7 +22,7 @@ The native `peterMath.exe` remains the primary submission. This web fallback is 
 - deterministic seeds make experiments repeatable;
 - Raw Math View, Artistic View, and Life Highlight View show the same underlying field differently;
 - metrics summarize the evolving field;
-- export/share actions provide evidence after play.
+- export/share actions provide evidence after play;
 - the `看懂演化` strip explains neighborhood, growth, damping, same-field views, and evidence.
 
 ## Sharing
