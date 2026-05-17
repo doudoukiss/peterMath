@@ -8,6 +8,7 @@ This folder is the correct Git repository root.
 
 - The app opens into `任务模式`, a playable Lenia mission shell.
 - Five missions teach the core ideas: wake the field, shape life, tune a rule, prove Raw/Artistic views share one field, and export an evidence report.
+- The first path is explicit: `1 选工具 / 2 选任务 / 3 点生命场`, with canvas coachmarks and local feedback pulses.
 - The central canvas is a real-time continuous field, not a video.
 - `数学原始图`, `艺术表达图`, and `生命高光图` show the same Lenia data in different visual languages.
 - Brush, stamp, seed, presets, and sliders become teaching actions with immediate mission feedback.
@@ -31,6 +32,7 @@ cargo test
 cargo clippy --all-targets -- -D warnings
 cargo build --release
 cargo run --bin render_preview
+python3 scripts/package_submission.py --out dist/peterMath_windows_submission
 cargo run --bin perf_probe
 ```
 
@@ -54,7 +56,7 @@ Push this folder as the root of the GitHub repository. The workflow:
 .github/workflows/windows-release.yml
 ```
 
-builds the release executable, runs checks, generates Lenia preview images, and uploads a `peterMath-windows-x64` artifact containing the executable, docs, assets, previews, templates, and web fallback.
+builds the release executable, runs checks, generates Lenia preview images, runs `scripts/package_submission.py`, and uploads a `peterMath-windows-x64` artifact containing the executable, launchers, docs, assets, previews, templates, and web fallback.
 
 ## Product Constraints
 

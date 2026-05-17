@@ -2,7 +2,7 @@
 
 ## Repository Structure
 
-This folder, `peterMath/`, is the Git repository root for the competition app. The outer `peterMath_pack/` folder is only a planning/archive workspace.
+This folder, `peterMath/`, is the Git repository root for the competition app.
 
 ```text
 peterMath/
@@ -12,6 +12,7 @@ peterMath/
 ├─ assets/
 ├─ docs/
 ├─ judge_submission_template/
+├─ scripts/package_submission.py
 ├─ screenshots/
 ├─ web_html/
 └─ src/
@@ -30,6 +31,7 @@ The judging story is native-first and Chinese-first. The app should first feel l
 ## Current Implemented Direction
 
 - Opening experience: a Chinese `任务模式` with short playable missions.
+- First-run flow: `1 选工具 / 2 选任务 / 3 点生命场`, canvas coachmark, and local feedback pulses.
 - Main identity: Lenia as a mathematical life teaching game.
 - Rendering: GPU Lenia is primary; CPU Lenia remains fallback/reference for metrics, inspector, exports, and manual validation.
 - Interaction: run, draw, erase, stamp, switch view, tune rule, inspect a point, and export evidence as mission actions.
@@ -37,25 +39,29 @@ The judging story is native-first and Chinese-first. The app should first feel l
 - Interpretability: active-region analysis, population phase trends, point inspection, Lenia rule variant comparison, and mission progress.
 - Performance: diagnostics, bounded scheduler, CPU texture dirty tracking, and `perf_probe`.
 - Shareability: PNG/JSON snapshot export, share-state JSON, evidence packs, generated Lenia previews, and offline web fallback.
+- Submission: `scripts/package_submission.py` assembles the native-first judge folder with Windows launchers and fallback materials.
 - Secondary presentation: the older automatic Lenia show mode remains available as `自动讲解`, but it is no longer the primary product direction.
 
 ## Final Submission Checklist
 
 1. Run all validation commands from the repository root.
 2. Generate previews with `cargo run --bin render_preview`.
-3. Confirm the app opens directly into `任务模式`.
-4. Complete the five teaching missions in a fresh run.
-5. Create at least one evidence pack from the final mission.
-6. Confirm `web_html/index.html` opens directly from disk and presents the same teaching-game positioning.
-7. Push to GitHub and run the Windows release workflow.
-8. Download `peterMath-windows-x64` and confirm it contains:
+3. Run `python3 scripts/package_submission.py --out dist/peterMath_windows_submission`.
+4. Confirm the app opens directly into `任务模式`.
+5. Complete the five teaching missions in a fresh run.
+6. Create at least one evidence pack from the final mission.
+7. Confirm `web_html/index.html` opens directly from disk and presents the same teaching-game positioning.
+8. Push to GitHub and run the Windows release workflow.
+9. Download `peterMath-windows-x64` and confirm it contains:
    - `peterMath.exe`
+   - `START_WINDOWS.bat`
+   - `打开备用网页.bat`
    - judge templates
    - web fallback
    - assets
    - generated Lenia previews
    - screenshot guidance
-9. Prepare a three-minute demonstration by playing missions first, then optionally using `自动讲解`.
+10. Prepare a three-minute demonstration by playing missions first, then optionally using `自动讲解`.
 
 ## Working Rule
 

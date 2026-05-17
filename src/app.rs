@@ -61,6 +61,8 @@ pub struct PeterMathApp {
     comparison_baseline_texture: Option<TextureHandle>,
     comparison_variant_texture: Option<TextureHandle>,
     feedback_pulse: Option<FeedbackPulse>,
+    canvas_feedback: Option<CanvasFeedbackEffect>,
+    canvas_coachmark_visible: bool,
     status: String,
     last_tick: Instant,
 }
@@ -122,6 +124,14 @@ struct FeedbackPulse {
     expires_at: Instant,
 }
 
+#[derive(Clone)]
+struct CanvasFeedbackEffect {
+    message: String,
+    kind: FeedbackKind,
+    started_at: Instant,
+    expires_at: Instant,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum FeedbackKind {
     Info,
@@ -136,6 +146,8 @@ struct MissionDefinition {
     scenario_zh: &'static str,
     goal_zh: &'static str,
     hint_zh: &'static str,
+    play_step_zh: &'static str,
+    recommended_action_zh: &'static str,
     success_zh: &'static str,
     takeaway_zh: &'static str,
     preset: LeniaPreset,
@@ -556,6 +568,8 @@ fn mission_definitions() -> [MissionDefinition; 5] {
             scenario_zh: "轨道场",
             goal_zh: "让生命场运行至少 60 步，并保持可见的活跃区域。",
             hint_zh: "点击运行，观察边界如何自己移动。不要急着调参数。",
+            play_step_zh: "先观察生命场自己动起来。",
+            recommended_action_zh: "工具：观察 · 任务：运行 60 步 · 生命场：看活跃边界",
             success_zh: "任务完成：你唤醒了一个由规则实时计算的 Lenia 场。",
             takeaway_zh: "Lenia 不是视频。每一步都由邻域卷积、增长函数和阻尼重新计算。",
             preset: LeniaPreset::OrbitalField,
@@ -570,6 +584,8 @@ fn mission_definitions() -> [MissionDefinition; 5] {
             scenario_zh: "稀疏汤",
             goal_zh: "用画笔或盖章增加活跃区域，让场里出现新的生命量。",
             hint_zh: "选择“盖章”或“绘制”，在画布上点一下，再让它继续演化。",
+            play_step_zh: "选盖章，在生命场里投放一团生命量。",
+            recommended_action_zh: "工具：盖章/绘制 · 任务：塑形 · 生命场：点击或拖动",
             success_zh: "任务完成：你的局部操作改变了后续演化。",
             takeaway_zh: "局部加入的生命量会进入同一张场，后续仍由同一个规则演化。",
             preset: LeniaPreset::SparseSoup,
@@ -584,6 +600,8 @@ fn mission_definitions() -> [MissionDefinition; 5] {
             scenario_zh: "卷积核环",
             goal_zh: "改变一个 Lenia 参数，运行至少 80 步，并观察指标变化。",
             hint_zh: "打开专家设置，轻微改变卷积半径或增长中心，再点击运行。",
+            play_step_zh: "改一个规则旋钮，再看同一场如何变样。",
+            recommended_action_zh: "工具：观察 · 任务：调参 · 生命场：运行对比",
             success_zh: "任务完成：同一初始场在新规则下产生了可测差异。",
             takeaway_zh: "参数不是装饰滑条。卷积半径、增长中心和阻尼会改变邻域平均与增长响应。",
             preset: LeniaPreset::KernelRing,
@@ -598,6 +616,8 @@ fn mission_definitions() -> [MissionDefinition; 5] {
             scenario_zh: "双体相遇",
             goal_zh: "看过数学原始图和艺术表达图，并用检查器查看同一点。",
             hint_zh: "切换显示方式，然后把鼠标移到画面上看检查器数值。",
+            play_step_zh: "切换两种视图，移动鼠标检查同一点。",
+            recommended_action_zh: "工具：观察 · 任务：换视图 · 生命场：检查同一 u 值",
             success_zh: "任务完成：两种画面来自同一张数值场。",
             takeaway_zh: "艺术表达图只改变颜色、轮廓和脊线映射，不改变底层 u 值。",
             preset: LeniaPreset::TwinOrganisms,
@@ -612,6 +632,8 @@ fn mission_definitions() -> [MissionDefinition; 5] {
             scenario_zh: "珊瑚衰退",
             goal_zh: "导出可复现状态或证据包，保存当前任务的参数和指标。",
             hint_zh: "在左侧专家/证据区点击“导出可复现状态”或“证据包”。",
+            play_step_zh: "玩完以后导出证据，让评委能复查。",
+            recommended_action_zh: "工具：证据 · 任务：导出 · 生命场：保存当前帧",
             success_zh: "任务完成：当前 Lenia 状态已经写成证据文件。",
             takeaway_zh: "证据文件把 seed、参数、步数、指标和任务状态连到同一帧画面。",
             preset: LeniaPreset::CoralDrift,
@@ -772,6 +794,8 @@ impl PeterMathApp {
             comparison_baseline_texture: None,
             comparison_variant_texture: None,
             feedback_pulse: None,
+            canvas_feedback: None,
+            canvas_coachmark_visible: true,
             status: if gpu_ready {
                 "任务模式已开始：先让生命场运行，完成“唤醒生命场”。".to_owned()
             } else {
@@ -916,14 +940,23 @@ impl PeterMathApp {
             self.teaching_game.complete(id);
             self.status = mission.success_zh.to_owned();
             self.trigger_feedback(FeedbackKind::Success, mission.success_zh);
+            self.canvas_coachmark_visible = false;
         }
     }
 
     fn trigger_feedback(&mut self, kind: FeedbackKind, message: impl Into<String>) {
+        let now = Instant::now();
+        let message = message.into();
         self.feedback_pulse = Some(FeedbackPulse {
-            message: message.into(),
+            message: message.clone(),
             kind,
-            expires_at: Instant::now() + Duration::from_secs_f32(2.4),
+            expires_at: now + Duration::from_secs_f32(2.4),
+        });
+        self.canvas_feedback = Some(CanvasFeedbackEffect {
+            message,
+            kind,
+            started_at: now,
+            expires_at: now + Duration::from_secs_f32(2.7),
         });
     }
 
@@ -950,6 +983,7 @@ impl PeterMathApp {
         self.show_kernel_overlay = true;
         self.tool = mission.tool;
         self.running = mission.start_running;
+        self.canvas_coachmark_visible = true;
         self.step_count = 0;
         self.tick_accumulator = Duration::ZERO;
         self.gpu_cpu_sync_counter = 0;
@@ -1912,6 +1946,7 @@ impl PeterMathApp {
         if !self.pointer_edit_active {
             self.push_lenia_history();
             self.pointer_edit_active = true;
+            self.canvas_coachmark_visible = false;
             self.trigger_feedback(FeedbackKind::Info, "正在塑造生命场");
         }
 
@@ -1945,6 +1980,108 @@ impl PeterMathApp {
         self.refresh_lenia_inspection();
         self.record_metric_history();
         self.update_teaching_progress();
+    }
+
+    fn draw_canvas_play_overlay(
+        &mut self,
+        painter: &egui::Painter,
+        rect: egui::Rect,
+        response: &egui::Response,
+    ) {
+        if response.clicked() || response.dragged() {
+            self.canvas_coachmark_visible = false;
+        }
+        self.draw_canvas_feedback_effect(painter, rect);
+        if self.canvas_coachmark_visible && !self.show_mode.enabled {
+            let mission = self.current_mission_definition();
+            let width = rect.width().min(390.0);
+            let box_rect = egui::Rect::from_min_size(
+                rect.min + egui::vec2(14.0, 14.0),
+                egui::vec2(width, 76.0),
+            );
+            painter.rect_filled(
+                box_rect,
+                6.0,
+                Color32::from_rgba_unmultiplied(5, 11, 14, 226),
+            );
+            painter.rect_stroke(
+                box_rect,
+                6.0,
+                egui::Stroke::new(1.2, arcade_accent_primary()),
+                egui::StrokeKind::Outside,
+            );
+            let title_font = egui::TextStyle::Button.resolve(&painter.ctx().style());
+            let body_font = egui::TextStyle::Small.resolve(&painter.ctx().style());
+            painter.text(
+                box_rect.min + egui::vec2(12.0, 12.0),
+                egui::Align2::LEFT_TOP,
+                "3 点生命场",
+                title_font,
+                arcade_accent_warning(),
+            );
+            painter.text(
+                box_rect.min + egui::vec2(12.0, 36.0),
+                egui::Align2::LEFT_TOP,
+                mission.play_step_zh,
+                body_font.clone(),
+                Color32::from_rgb(232, 242, 244),
+            );
+            painter.text(
+                box_rect.min + egui::vec2(12.0, 56.0),
+                egui::Align2::LEFT_TOP,
+                "点击/拖动会改变当前 Lenia 场，不是播放视频。",
+                body_font,
+                Color32::from_rgb(157, 177, 184),
+            );
+        }
+    }
+
+    fn draw_canvas_feedback_effect(&self, painter: &egui::Painter, rect: egui::Rect) {
+        let Some(effect) = self.canvas_feedback.as_ref() else {
+            return;
+        };
+        let now = Instant::now();
+        if now > effect.expires_at {
+            return;
+        }
+        let duration = effect
+            .expires_at
+            .checked_duration_since(effect.started_at)
+            .unwrap_or(Duration::from_secs_f32(1.0))
+            .as_secs_f32()
+            .max(0.001);
+        let elapsed = now
+            .checked_duration_since(effect.started_at)
+            .unwrap_or(Duration::ZERO)
+            .as_secs_f32();
+        let progress = (elapsed / duration).clamp(0.0, 1.0);
+        let alpha = ((1.0 - progress) * 220.0).clamp(0.0, 220.0) as u8;
+        let accent = feedback_color(effect.kind);
+        let pulse_rect = egui::Rect::from_center_size(
+            egui::pos2(rect.center().x, rect.min.y + 34.0 + progress * 6.0),
+            egui::vec2(rect.width().min(460.0), 38.0),
+        );
+        painter.rect_filled(
+            pulse_rect,
+            6.0,
+            Color32::from_rgba_unmultiplied(8, 14, 16, alpha),
+        );
+        painter.rect_stroke(
+            pulse_rect,
+            6.0,
+            egui::Stroke::new(
+                1.4,
+                Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), alpha),
+            ),
+            egui::StrokeKind::Outside,
+        );
+        painter.text(
+            pulse_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            &effect.message,
+            egui::TextStyle::Button.resolve(&painter.ctx().style()),
+            Color32::from_rgba_unmultiplied(238, 247, 248, alpha),
+        );
     }
 
     fn update_lenia_inspection_from_canvas(&mut self, rect: egui::Rect, response: &egui::Response) {
@@ -2266,11 +2403,12 @@ impl PeterMathApp {
 
     fn draw_show_mode_controls(&mut self, ui: &mut egui::Ui) {
         ui.heading("评审演示模式");
+        self.draw_judge_play_route_mini(ui);
         if !self.show_mode.enabled {
             if ui.button("开始 Lenia 演示").clicked() {
                 self.start_show_mode();
             }
-            ui.small("约 3 分钟：只讲 Lenia 的连续场、卷积核、增长和证据导出。");
+            ui.small("手动任务仍是主体验；自动讲解只用于评委需要快速旁白时。");
             return;
         }
 
@@ -2351,6 +2489,22 @@ impl PeterMathApp {
         ui.small("手动修改参数或画布时，演示会自动暂停。");
     }
 
+    fn draw_judge_play_route_mini(&self, ui: &mut egui::Ui) {
+        let completed = self.teaching_game.completed.len();
+        let total = mission_definitions().len();
+        egui::Frame::group(ui.style())
+            .fill(arcade_panel_deep())
+            .stroke(egui::Stroke::new(1.0, arcade_stroke()))
+            .show(ui, |ui| {
+                ui.colored_label(arcade_accent_warning(), "玩法演示路径");
+                ui.small("打开 -> 选任务 -> 点生命场 -> 看反馈 -> 解锁数学 -> 导出证据");
+                ui.add(
+                    egui::ProgressBar::new(completed as f32 / total as f32)
+                        .text(format!("手动任务完成 {completed}/{total}")),
+                );
+            });
+    }
+
     fn draw_show_mode_narration(&self, ui: &mut egui::Ui) {
         if !self.show_mode.enabled {
             if let Some(case_id) = self.active_major_case {
@@ -2389,11 +2543,13 @@ impl PeterMathApp {
         let progress = self.current_mission_progress();
         let progress_value = mission_progress_fraction(self.teaching_game.active_mission, progress);
         ui.heading("任务模式");
+        play_path_guide(ui, mission);
         mission_header_card(
             ui,
             mission.title_zh,
             mission.scenario_zh,
             mission.goal_zh,
+            mission.recommended_action_zh,
             self.current_mission_status(),
             progress_value,
         );
@@ -2816,6 +2972,11 @@ impl PeterMathApp {
                         ui.separator();
                         ui.label(mission.goal_zh);
                     });
+                    ui.horizontal_wrapped(|ui| {
+                        status_chip(ui, "1 选工具", tool_color(mission.tool));
+                        status_chip(ui, "2 选任务", arcade_accent_primary());
+                        status_chip(ui, "3 点生命场", arcade_accent_warning());
+                    });
                     ui.add(
                         egui::ProgressBar::new(progress)
                             .text(format!("任务进度 {:.0}%", progress * 100.0)),
@@ -2835,6 +2996,47 @@ impl PeterMathApp {
                     phase.description()
                 ));
             });
+    }
+
+    fn draw_lenia_learning_strip(&self, ui: &mut egui::Ui) {
+        ui.add_space(4.0);
+        ui.horizontal_wrapped(|ui| {
+            lenia_learning_step(
+                ui,
+                "邻域",
+                "K*u",
+                "每点先看周围加权平均，不只看自己。",
+                arcade_accent_primary(),
+            );
+            lenia_learning_step(
+                ui,
+                "增长",
+                "G(K*u)",
+                "邻域接近目标值时增长，偏离就衰减。",
+                arcade_accent_success(),
+            );
+            lenia_learning_step(
+                ui,
+                "阻尼",
+                "damping",
+                "阻尼让生命量不会无限堆高。",
+                arcade_accent_warning(),
+            );
+            lenia_learning_step(
+                ui,
+                "同场",
+                "raw/art",
+                "原始图和艺术图读的是同一张 u 场。",
+                Color32::from_rgb(255, 118, 168),
+            );
+            lenia_learning_step(
+                ui,
+                "证据",
+                "seed/json",
+                "导出把参数、步数和任务状态绑到画面。",
+                Color32::from_rgb(216, 240, 139),
+            );
+        });
     }
 
     fn draw_compact_live_diagnostics(&self, ui: &mut egui::Ui) {
@@ -2884,8 +3086,16 @@ impl PeterMathApp {
             mission.title_zh,
             mission.scenario_zh,
             mission.goal_zh,
+            mission.recommended_action_zh,
             self.current_mission_status(),
             progress_value,
+        );
+        state_card(ui, "目标", mission.goal_zh, arcade_accent_primary());
+        state_card(
+            ui,
+            "下一步",
+            mission_next_hint(mission.id),
+            arcade_accent_warning(),
         );
         ui.horizontal(|ui| {
             if arcade_button(ui, "提示", arcade_accent_primary()).clicked() {
@@ -3249,7 +3459,14 @@ impl eframe::App for PeterMathApp {
         {
             self.feedback_pulse = None;
         }
-        if self.feedback_pulse.is_some() {
+        if self
+            .canvas_feedback
+            .as_ref()
+            .is_some_and(|effect| Instant::now() > effect.expires_at)
+        {
+            self.canvas_feedback = None;
+        }
+        if self.feedback_pulse.is_some() || self.canvas_feedback.is_some() {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
 
@@ -3293,7 +3510,9 @@ impl eframe::App for PeterMathApp {
                 ui.add_space(8.0);
                 self.draw_central_explanation_bar(ui);
                 let available = ui.available_size();
-                let square = (available.x.min(available.y) - 28.0).max(320.0);
+                let reserved_for_learning = if self.show_mode.enabled { 36.0 } else { 154.0 };
+                let square =
+                    (available.x.min(available.y - reserved_for_learning) - 28.0).max(320.0);
                 let size = egui::vec2(square, square);
                 if self.gpu_lenia_active() {
                     let render_start = Instant::now();
@@ -3310,6 +3529,7 @@ impl eframe::App for PeterMathApp {
                         self.draw_lenia_inspection_overlay(ui.painter(), rect);
                         self.draw_active_region_overlay(ui.painter(), rect);
                         self.draw_tool_preview(ui.painter(), rect, &response);
+                        self.draw_canvas_play_overlay(ui.painter(), rect, &response);
                     });
                     render_duration += render_start.elapsed();
                 } else {
@@ -3348,6 +3568,7 @@ impl eframe::App for PeterMathApp {
                             self.draw_lenia_inspection_overlay(ui.painter(), rect);
                             self.draw_active_region_overlay(ui.painter(), rect);
                             self.draw_tool_preview(ui.painter(), rect, &response);
+                            self.draw_canvas_play_overlay(ui.painter(), rect, &response);
                         });
                     }
                 }
@@ -3360,6 +3581,9 @@ impl eframe::App for PeterMathApp {
                     self.active_seed(),
                     self.step_count
                 ));
+                if !self.show_mode.enabled {
+                    self.draw_lenia_learning_strip(ui);
+                }
             });
         });
 
@@ -4121,11 +4345,45 @@ fn state_card(ui: &mut egui::Ui, label: &str, text: &str, accent: Color32) {
         });
 }
 
+fn play_path_guide(ui: &mut egui::Ui, mission: MissionDefinition) {
+    egui::Frame::group(ui.style())
+        .fill(arcade_panel_deep())
+        .stroke(egui::Stroke::new(1.0, arcade_stroke()))
+        .show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                status_chip(ui, "1 选工具", tool_color(mission.tool));
+                ui.separator();
+                status_chip(ui, "2 选任务", arcade_accent_primary());
+                ui.separator();
+                status_chip(ui, "3 点生命场", arcade_accent_warning());
+            });
+            ui.small(mission.play_step_zh);
+        });
+}
+
+fn lenia_learning_step(ui: &mut egui::Ui, label: &str, title: &str, text: &str, accent: Color32) {
+    egui::Frame::group(ui.style())
+        .fill(Color32::from_rgba_unmultiplied(
+            accent.r(),
+            accent.g(),
+            accent.b(),
+            18,
+        ))
+        .stroke(egui::Stroke::new(1.0, accent))
+        .show(ui, |ui| {
+            ui.set_min_width(124.0);
+            ui.colored_label(accent, label);
+            ui.strong(title);
+            ui.small(text);
+        });
+}
+
 fn mission_header_card(
     ui: &mut egui::Ui,
     title: &str,
     scenario: &str,
     goal: &str,
+    action: &str,
     status: MissionStatus,
     progress: f32,
 ) {
@@ -4140,6 +4398,7 @@ fn mission_header_card(
             });
             ui.small(format!("场景：{scenario}"));
             ui.label(goal);
+            ui.colored_label(arcade_accent_warning(), action);
             ui.add(egui::ProgressBar::new(progress).text(format!("{:.0}%", progress * 100.0)));
         });
 }
@@ -4183,6 +4442,7 @@ fn mission_card(
                 ui.small(status.label());
             });
             ui.small(mission.scenario_zh);
+            ui.colored_label(arcade_accent_warning(), mission.recommended_action_zh);
             if ui
                 .add_sized(
                     [ui.available_width(), 28.0],
@@ -4294,6 +4554,9 @@ mod tests {
             assert!(!mission.scenario_zh.is_empty());
             assert!(!mission.goal_zh.is_empty());
             assert!(!mission.hint_zh.is_empty());
+            assert!(!mission.play_step_zh.is_empty());
+            assert!(!mission.recommended_action_zh.is_empty());
+            assert!(!mission_next_hint(mission.id).is_empty());
             assert!(!mission.success_zh.is_empty());
             assert!(!mission.takeaway_zh.is_empty());
             assert!((1..=8).contains(&mission.step_rate));

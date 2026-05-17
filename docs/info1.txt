@@ -24,6 +24,7 @@ Native direction
 - CPU Lenia remains fallback/reference for metrics, inspector, previews, and exports.
 - Chinese UI is primary.
 - The app opens into mission-based `任务模式`.
+- First-run onboarding shows `1 选工具 / 2 选任务 / 3 点生命场`.
 - Guided Lenia show mode remains a secondary presentation option.
 
 Implemented pillars
@@ -37,6 +38,7 @@ Implemented pillars
 - Rule variant comparison for radius, growth center, growth width, and damping.
 - PNG/JSON snapshot export, share-state JSON, and evidence packs.
 - Mission progress and an offline `web_html/` fallback.
+- Native-first packaging through `scripts/package_submission.py`, with Windows launchers and judge placeholders.
 
 Mission direction
 -----------------

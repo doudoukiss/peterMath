@@ -201,6 +201,23 @@
       line-height: 1.45;
     }
 
+    .step-strip {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 7px;
+      margin-top: 14px;
+    }
+
+    .step-pill {
+      padding: 8px 10px;
+      border: 1px solid rgba(69, 218, 231, 0.24);
+      border-radius: 6px;
+      background: rgba(69, 218, 231, 0.06);
+      color: #d7e9ee;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
     .mission-title {
       margin-top: 8px;
       color: #f4fafc;
@@ -249,6 +266,13 @@
       background: rgba(69, 218, 231, 0.07);
     }
 
+    .canvas-wrap {
+      position: relative;
+      width: min(78vh, 100%);
+      max-width: 880px;
+      aspect-ratio: 1;
+    }
+
     @media (max-width: 960px) {
       .shell {
         grid-template-columns: 1fr;
@@ -256,6 +280,92 @@
 
       aside {
         border-width: 1px 0 0;
+      }
+    }
+
+    .canvas-wrap canvas {
+      width: 100%;
+      height: 100%;
+      max-width: none;
+      display: block;
+    }
+
+    .coachmark,
+    .canvas-feedback {
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      z-index: 2;
+      pointer-events: none;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 219, 128, 0.48);
+      background: rgba(5, 11, 14, 0.86);
+      color: #f4fafc;
+      padding: 10px 12px;
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
+    }
+
+    .coachmark {
+      top: 14px;
+    }
+
+    .coachmark strong,
+    .canvas-feedback strong {
+      color: #ffdb80;
+      display: block;
+      margin-bottom: 3px;
+    }
+
+    .canvas-feedback {
+      top: 14px;
+      text-align: center;
+      border-color: rgba(69, 218, 231, 0.62);
+      color: #eaffff;
+      opacity: 0;
+      transform: translateY(-8px);
+      transition: opacity 180ms ease, transform 180ms ease;
+    }
+
+    .canvas-feedback.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .learning-strip {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(120px, 1fr));
+      gap: 8px;
+      padding: 0 18px 16px;
+    }
+
+    .learning-card {
+      min-height: 92px;
+      padding: 10px;
+      border: 1px solid rgba(231, 237, 241, 0.12);
+      border-radius: 6px;
+      background: #0b1318;
+    }
+
+    .learning-card span {
+      color: #64e8da;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .learning-card strong {
+      display: block;
+      margin-top: 4px;
+      color: #f4fafc;
+    }
+
+    .learning-card p {
+      margin-top: 5px;
+      font-size: 12px;
+    }
+
+    @media (max-width: 1120px) {
+      .learning-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
       }
     }
   </style>
@@ -266,11 +376,17 @@
       <h1>peterMath<br>Lenia 教学游戏备用版</h1>
       <p>这是离线网页 fallback。正式作品是原生 GPU Lenia 程序；这里保留同一组任务，让评委可以先玩，再看数学证据。</p>
       <code>u_next = clamp(u + dt*(G(K*u) - damping*u), 0, 1)</code>
+      <div class="step-strip" aria-label="评委玩法路径">
+        <div class="step-pill">1 选工具：观察、注入生命量或导出证据</div>
+        <div class="step-pill">2 选任务：按任务卡从上到下完成</div>
+        <div class="step-pill">3 点生命场：看反馈，再解锁数学卡片</div>
+      </div>
 
       <h2>任务模式</h2>
       <div class="hud">
         <div class="mission-title" id="missionTitle"></div>
         <p id="missionGoal"></p>
+        <p id="missionNext"></p>
         <div class="bar"><div class="fill" id="missionBar"></div></div>
       </div>
       <div class="button-row">
@@ -336,9 +452,23 @@
         <span id="phaseLabel"></span>
       </div>
       <div class="stage">
-        <canvas id="canvas" width="256" height="256"></canvas>
+        <div class="canvas-wrap">
+          <canvas id="canvas" width="256" height="256"></canvas>
+          <div id="coachmark" class="coachmark">
+            <strong>3 点生命场</strong>
+            点击或拖动会改变当前 Lenia 场；这不是预渲染视频。
+          </div>
+          <div id="canvasFeedback" class="canvas-feedback"></div>
+        </div>
       </div>
       <div class="caption">点击或拖动画布可注入生命量。完成任务后再查看右侧数学卡片和指标。</div>
+      <section class="learning-strip" aria-label="看懂 Lenia 演化">
+        <article class="learning-card"><span>邻域</span><strong>K*u</strong><p>每点先读取周围加权平均。</p></article>
+        <article class="learning-card"><span>增长</span><strong>G(K*u)</strong><p>接近目标值时增长，偏离就衰减。</p></article>
+        <article class="learning-card"><span>阻尼</span><strong>damping</strong><p>阻尼让生命量不会无限堆高。</p></article>
+        <article class="learning-card"><span>同场</span><strong>raw/art</strong><p>两种视图来自同一张 u 场。</p></article>
+        <article class="learning-card"><span>证据</span><strong>seed/json</strong><p>导出保存参数、步数和任务状态。</p></article>
+      </section>
     </main>
 
     <aside class="right">
@@ -352,6 +482,7 @@
       <div class="metric"><div class="metric-head"><span>稳定度</span><span id="stabilityText"></span></div><div class="bar"><div class="fill" id="stabilityBar"></div></div></div>
       <div class="metric"><div class="metric-head"><span>生命力</span><span id="vitalityText"></span></div><div class="bar"><div class="fill" id="vitalityBar"></div></div></div>
       <div class="notice" id="status">正在实时运行 Lenia fallback。</div>
+      <div class="notice">评委优先运行 peterMath.exe；本页只是在原生程序无法启动时直接双击打开的备用教学游戏。</div>
     </aside>
   </div>
 
@@ -359,6 +490,8 @@
     const N = 256;
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
+    const coachmark = document.getElementById('coachmark');
+    const canvasFeedback = document.getElementById('canvasFeedback');
     const image = ctx.createImageData(N, N);
     let field = new Float32Array(N * N);
     let next = new Float32Array(N * N);
@@ -370,16 +503,17 @@
     let latestMetrics = { mass: 0, entropy: 0, stability: 0, vitality: 0, active: 0 };
 
     const missions = [
-      { id: 'wake_field', title: '唤醒生命场', preset: 'orbital', goal: '运行至少 60 步，并保持可见活跃区域。', hint: '点击运行，先观察边界自己移动。', takeaway: 'Lenia 不是视频，每一步都由同一个局部规则实时计算。' },
-      { id: 'shape_life', title: '塑造生命', preset: 'soup', goal: '点击或拖动画布，增加新的活跃区域。', hint: '在画布上点一下，相当于给场加入生命量。', takeaway: '局部加入的生命量会进入同一张场，后续仍由同一个规则演化。' },
-      { id: 'tune_rule', title: '半径挑战', preset: 'ring', goal: '改变一个参数后运行 80 步，观察指标变化。', hint: '轻微改变卷积半径或增长中心，再点击运行。', takeaway: '参数会改变邻域平均和增长响应，因此会改变形态。' },
-      { id: 'same_field', title: '证明同一数据', preset: 'twin', goal: '看过数学原始图和艺术表达图，并把鼠标移到画面上检查同一点。', hint: '切换显示方式，然后移动鼠标到画布上。', takeaway: '艺术表达图只改变颜色和轮廓映射，不改变底层 u 值。' },
-      { id: 'evidence_report', title: '生成证据报告', preset: 'coral', goal: '复制分享链接或导出 PNG，保存当前状态。', hint: '点击复制链接或导出 PNG。', takeaway: '证据把 seed、参数、步数和当前画面联系起来。' }
+      { id: 'wake_field', title: '唤醒生命场', preset: 'orbital', action: '观察运行 60 步', goal: '运行至少 60 步，并保持可见活跃区域。', hint: '点击运行，先观察边界自己移动。', takeaway: 'Lenia 不是视频，每一步都由同一个局部规则实时计算。' },
+      { id: 'shape_life', title: '塑造生命', preset: 'soup', action: '点击或拖动生命场', goal: '点击或拖动画布，增加新的活跃区域。', hint: '在画布上点一下，相当于给场加入生命量。', takeaway: '局部加入的生命量会进入同一张场，后续仍由同一个规则演化。' },
+      { id: 'tune_rule', title: '半径挑战', preset: 'ring', action: '改一个规则参数', goal: '改变一个参数后运行 80 步，观察指标变化。', hint: '轻微改变卷积半径或增长中心，再点击运行。', takeaway: '参数会改变邻域平均和增长响应，因此会改变形态。' },
+      { id: 'same_field', title: '证明同一数据', preset: 'twin', action: '切换视图并检查同一点', goal: '看过数学原始图和艺术表达图，并把鼠标移到画面上检查同一点。', hint: '切换显示方式，然后移动鼠标到画布上。', takeaway: '艺术表达图只改变颜色和轮廓映射，不改变底层 u 值。' },
+      { id: 'evidence_report', title: '生成证据报告', preset: 'coral', action: '复制链接或导出 PNG', goal: '复制分享链接或导出 PNG，保存当前状态。', hint: '点击复制链接或导出 PNG。', takeaway: '证据把 seed、参数、步数和当前画面联系起来。' }
     ];
     let missionIndex = 0;
     let completedMissions = new Set();
     let missionState = null;
     let hintVisible = false;
+    let canvasFeedbackTimer = null;
 
     const controls = {
       preset: document.getElementById('preset'),
@@ -645,9 +779,13 @@
       if (!missionState) return;
       const mission = missions[missionIndex];
       const complete = missionComplete();
-      if (complete) completedMissions.add(mission.id);
+      if (complete && !completedMissions.has(mission.id)) {
+        completedMissions.add(mission.id);
+        showCanvasFeedback(`成功：${mission.title}`);
+      }
       document.getElementById('missionTitle').textContent = mission.title;
       document.getElementById('missionGoal').textContent = mission.goal;
+      document.getElementById('missionNext').textContent = `下一步：${mission.action}`;
       document.getElementById('missionBar').style.width = `${missionProgress() * 100}%`;
       document.getElementById('missionFeedback').textContent = complete
         ? `成功：${mission.takeaway}`
@@ -665,7 +803,7 @@
       missions.forEach((mission, index) => {
         const button = document.createElement('button');
         const status = completedMissions.has(mission.id) ? '已完成' : index === missionIndex ? '进行中' : '未开始';
-        button.textContent = `${status} · ${mission.title}`;
+        button.innerHTML = `<strong>${status} · ${mission.title}</strong><br><span>${mission.action}</span>`;
         button.className = `mission-card${index === missionIndex ? ' active' : ''}${completedMissions.has(mission.id) ? ' done' : ''}`;
         button.onclick = () => startMission(index);
         list.appendChild(button);
@@ -679,7 +817,17 @@
       resetField();
       resetMissionState();
       document.getElementById('status').textContent = `任务开始：${missions[missionIndex].title}`;
+      showCanvasFeedback(`任务开始：${missions[missionIndex].title}`);
       updateMission();
+    }
+
+    function showCanvasFeedback(message) {
+      canvasFeedback.innerHTML = `<strong>${message}</strong>`;
+      canvasFeedback.classList.add('show');
+      window.clearTimeout(canvasFeedbackTimer);
+      canvasFeedbackTimer = window.setTimeout(() => {
+        canvasFeedback.classList.remove('show');
+      }, 2200);
     }
 
     function tick() {
@@ -729,12 +877,14 @@
           render();
           updateHash();
           updateMission();
+          showCanvasFeedback('显示方式已切换，同一张场仍在计算');
           return;
         }
         if (['radius', 'center', 'width', 'damping'].includes(key) && missionState) {
           missionState.parameterChanged = true;
         }
         document.getElementById('status').textContent = '参数已改变：当前规则正在实时重新计算。';
+        showCanvasFeedback('规则参数已改变');
         resetField();
       });
     }
@@ -748,10 +898,15 @@
     document.getElementById('seed').addEventListener('click', () => { seed = (seed * 1664525 + 1013904223) >>> 0; resetField(); });
     document.getElementById('copy').addEventListener('click', async () => {
       updateHash();
-      await navigator.clipboard.writeText(location.href);
+      try {
+        await navigator.clipboard.writeText(location.href);
+      } catch (error) {
+        window.prompt('复制当前分享链接', location.href);
+      }
       if (missionState) missionState.exported = true;
       updateMission();
       document.getElementById('status').textContent = '已复制当前 Lenia 分享链接。';
+      showCanvasFeedback('已复制分享链接');
     });
     document.getElementById('export').addEventListener('click', () => {
       const a = document.createElement('a');
@@ -760,9 +915,14 @@
       a.click();
       if (missionState) missionState.exported = true;
       updateMission();
+      document.getElementById('status').textContent = '已导出当前 Lenia PNG。';
+      showCanvasFeedback('已导出 PNG 证据');
     });
 
-    canvas.addEventListener('pointerdown', inject);
+    canvas.addEventListener('pointerdown', (event) => {
+      coachmark.hidden = true;
+      inject(event);
+    });
     canvas.addEventListener('pointermove', () => {
       if (missionState) {
         missionState.inspected = true;
@@ -780,6 +940,7 @@
       if (missionState) missionState.edited = true;
       updateMission();
       document.getElementById('status').textContent = '已向 Lenia 场注入生命量。';
+      showCanvasFeedback('生命量已注入，下一帧重新计算');
     }
 
     loadHash();

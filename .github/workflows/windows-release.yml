@@ -37,27 +37,8 @@ jobs:
       - name: Generate preview images
         run: cargo run --bin render_preview
 
-      - name: Prepare artifact folder
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path dist\peterMath_windows_submission | Out-Null
-          Copy-Item target\release\peterMath.exe dist\peterMath_windows_submission\peterMath.exe
-          Copy-Item README.md dist\peterMath_windows_submission\README_PROJECT.md
-          if (Test-Path assets) {
-            Copy-Item assets dist\peterMath_windows_submission\assets -Recurse -Force
-          }
-          if (Test-Path judge_submission_template) {
-            Copy-Item judge_submission_template\* dist\peterMath_windows_submission\ -Recurse -Force
-          }
-          if (Test-Path web_html) {
-            Copy-Item web_html dist\peterMath_windows_submission\web_html -Recurse -Force
-          }
-          if (Test-Path screenshots) {
-            Copy-Item screenshots dist\peterMath_windows_submission\screenshots -Recurse -Force
-          }
-          if (Test-Path peterMath_exports\previews) {
-            Copy-Item peterMath_exports\previews dist\peterMath_windows_submission\previews -Recurse -Force
-          }
+      - name: Prepare native-first judge package
+        run: python scripts/package_submission.py --exe target/release/peterMath.exe --out dist/peterMath_windows_submission
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4

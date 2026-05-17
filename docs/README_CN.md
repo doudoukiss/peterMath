@@ -29,17 +29,17 @@ peterMath：Lenia 数学生命教学游戏
 ## 本工作区结构
 
 ```text
-peterMath_pack/
-├─ README_CN.md
+peterMath/
+├─ README.md
 ├─ docs/
 │  ├─ PROJECT_BRIEF.md                # 项目方向、路线、阶段目标
 │  ├─ BUILD_WINDOWS_FROM_MAC.md       # Mac 开发、Windows 构建流程
 │  ├─ CODEX_PROMPTS_EN.md             # 分阶段 Codex prompts
 │  ├─ REFERENCE_PROJECTS.md           # 可研究的外部项目
 │  └─ BACKUP_OPTIONS.md               # Tauri/WASM 与 C++/OpenGL 备用路线
-└─ peterMath/                         # 正式 app / Git 仓库根目录
-   ├─ web_html/                       # 静态 HTML 备用演示窗口
-   └─ judge_submission_template/      # 评委提交模板
+├─ scripts/package_submission.py      # 评委提交包组装脚本
+├─ web_html/                          # 静态 HTML 备用演示窗口
+└─ judge_submission_template/         # 评委提交模板
 ```
 
 ## 正确的 Git 根目录
@@ -47,12 +47,12 @@ peterMath_pack/
 应在下面这个目录运行 `git init`：
 
 ```bash
-cd /Users/sonics/project/peterMath_pack/peterMath
+cd /Users/sonics/project/peterMath
 git init
 git branch -M main
 ```
 
-不要把外层 `/Users/sonics/project/peterMath_pack` 当成主 Git 仓库，除非你只是想把整个升级包作为资料归档。正式比赛仓库应聚焦在 Rust 应用本身，这样 GitHub Actions、README、源码、assets 和提交模板都在同一个清晰根目录下。
+正式比赛仓库应聚焦在这个 Rust 应用根目录本身，这样 GitHub Actions、README、源码、assets、打包脚本和提交模板都在同一个清晰根目录下。
 
 ## 建议工作流
 
@@ -64,6 +64,8 @@ cargo fmt
 cargo clippy --all-targets -- -D warnings
 cargo test
 cargo run --release
+cargo run --bin render_preview
+python3 scripts/package_submission.py --out dist/peterMath_windows_submission
 ```
 
 3. 把 `docs/CODEX_PROMPTS_EN.md` 中的 Prompt 0 到 Prompt 12 按顺序交给 Codex。
@@ -82,6 +84,10 @@ cargo run --release
 ```text
 peterMath_windows_submission/
 ├─ peterMath.exe
+├─ START_WINDOWS.bat
+├─ 双击运行-评委版.bat
+├─ 打开备用网页.bat
+├─ 评委入口.html
 ├─ README_给评委.txt
 ├─ 作品说明_学生版.docx 或 .md
 ├─ 参数实验记录表.csv
@@ -106,11 +112,11 @@ peterMath/judge_submission_template/
 
 ## 下一步优先级
 
-1. 先修好基础工程卫生：格式化、测试、`.gitignore`、GitHub Actions artifact。
-2. 强化默认任务模式，让打开后 5 秒内知道要做什么。
+1. 先修好基础工程卫生：格式化、测试、`.gitignore`、GitHub Actions artifact 和打包脚本。
+2. 强化默认任务模式，让打开后 5 秒内知道 `1 选工具 / 2 选任务 / 3 点生命场`。
 3. 让五个任务覆盖运行、塑形、调参、同一数据证明和证据导出。
 4. 加强导出：PNG、参数 JSON、share-state JSON、evidence pack。
-5. 确认 GitHub Actions artifact 同时包含 `peterMath.exe` 和 `web_html/`。
+5. 确认 GitHub Actions artifact 同时包含 `peterMath.exe`、Windows 启动脚本和 `web_html/`。
 6. 自动讲解和专家面板作为辅助，不压过任务模式。
 
 重点不是把所有算法一次写完，而是把工程骨架、任务体验、数学解释和 Windows 交付链打通。

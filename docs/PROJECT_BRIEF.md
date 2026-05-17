@@ -16,7 +16,7 @@ Lenia 数学生命教学游戏
 peterMath.exe + web_html/index.html + 评委说明 + 学生作品说明 + 实验数据 + 截图 + 3分钟演示视频
 ```
 
-评委打开 `peterMath.exe` 后，不应需要安装 Rust、Node、npm、Visual Studio、Python 或启动本地服务器，也不应先读长篇说明。默认路径是进入任务模式、完成短任务、看到反馈、解锁数学卡片、导出证据。如果评审电脑无法运行 `.exe`，可以直接打开 `web_html/index.html` 作为备用教学游戏窗口。
+评委打开 `peterMath.exe` 后，不应需要安装 Rust、Node、npm、Visual Studio、Python 或启动本地服务器，也不应先读长篇说明。默认路径是进入任务模式，看见 `1 选工具 / 2 选任务 / 3 点生命场`，完成短任务、看到反馈、解锁数学卡片、导出证据。如果评审电脑无法运行 `.exe`，可以直接打开 `web_html/index.html` 作为备用教学游戏窗口。
 
 ## 已确定技术路线
 
@@ -42,21 +42,20 @@ Rust + egui/eframe + wgpu/WGSL + GitHub Actions Windows build
 
 ## 当前工作区解释
 
-当前外层文件夹 `/Users/sonics/project/peterMath_pack` 是升级包/工作区，不是最终 Git 仓库根目录。
-
 真正应作为 Git 仓库根目录的是：
 
 ```text
-/Users/sonics/project/peterMath_pack/peterMath
+/Users/sonics/project/peterMath
 ```
 
 原因：
 
 - 这里有 `Cargo.toml`、`Cargo.lock`、`src/`、`assets/`。
+- 这里有 `scripts/package_submission.py` 负责组装评委提交包。
 - 这里有 `web_html/` 静态备用演示。
 - 这里有 `.github/workflows/windows-release.yml`。
 - GitHub Actions workflow 默认从仓库根目录运行 `cargo build --release`。
-- 如果在外层 `peterMath_pack` 初始化 Git，会把备选路线、历史说明、包装材料和当前 Rust app 混在一起，降低项目清晰度。
+- 不要把其他参考项目或历史备选路线混进这个 Git 根目录。
 
 ## 当前产品状态
 
@@ -73,8 +72,8 @@ Rust + egui/eframe + wgpu/WGSL + GitHub Actions Windows build
 
 按优先级推进：
 
-1. 先保证仓库根目录、构建、格式化、测试和 Windows artifact 都可靠。
-2. 默认打开后进入任务模式，5 秒内让评委知道要点击或操作什么。
+1. 先保证仓库根目录、构建、格式化、测试、打包脚本和 Windows artifact 都可靠。
+2. 默认打开后进入任务模式，5 秒内让评委知道 `1 选工具 / 2 选任务 / 3 点生命场`。
 3. 把 UI 语言统一为 mission、goal、feedback、math card、field、kernel、seed、metric、evidence。
 4. 先不新增其他模拟系统；第一阶段只做 Lenia 教学游戏。
 5. 保留自动讲解作为辅助路径，不让它压过任务模式。
