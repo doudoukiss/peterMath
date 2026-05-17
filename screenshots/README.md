@@ -14,11 +14,11 @@ peterMath_exports/previews/
 
 Use these files for judge-facing screenshots:
 
-- `lenia_hero.png`: main Lenia artwork.
-- `lenia_showcase.png`: six representative Lenia cases.
-- `judge_mode_reference.png`: Raw Math View, Artistic View, and explanation/evidence panel.
-- `show_mode_storyboard.png`: the Lenia-only guided show sequence.
-- `major_cases_gallery.png`: one-click Lenia case gallery.
-- `lenia_explanation_reference.png`: artistic field plus explanation panel.
+- `lenia_hero.png`: main Lenia teaching-game field.
+- `lenia_showcase.png`: representative Lenia mission scenarios.
+- `judge_mode_reference.png`: Raw Math View, Artistic View, and mission/evidence panel.
+- `show_mode_storyboard.png`: secondary automatic explanation sequence.
+- `major_cases_gallery.png`: one-click scenario gallery.
+- `lenia_explanation_reference.png`: artistic field plus math card reference.
 
 Native app exports and evidence packs should be created during final review and placed in the final submission folder, not committed to the repository.

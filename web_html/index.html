@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>peterMath Lenia Fallback</title>
+  <title>peterMath Teaching Game Fallback</title>
+  <link rel="icon" href="data:,">
   <style>
     :root {
       color-scheme: dark;
@@ -197,6 +198,26 @@
       line-height: 1.45;
     }
 
+    .mission-title {
+      margin-top: 8px;
+      color: #f4fafc;
+      font-weight: 720;
+      font-size: 16px;
+    }
+
+    .mission-list {
+      display: grid;
+      gap: 7px;
+      margin-top: 12px;
+    }
+
+    .mission-list button {
+      height: auto;
+      min-height: 34px;
+      padding: 8px;
+      text-align: left;
+    }
+
     @media (max-width: 960px) {
       .shell {
         grid-template-columns: 1fr;
@@ -211,9 +232,20 @@
 <body>
   <div class="shell">
     <aside class="left">
-      <h1>peterMath<br>Lenia 备用展示</h1>
-      <p>这是离线网页 fallback。正式作品是原生 GPU Lenia 程序；这里用于证明同一类连续场规则可以在浏览器里实时运行。</p>
+      <h1>peterMath<br>Lenia 教学游戏备用版</h1>
+      <p>这是离线网页 fallback。正式作品是原生 GPU Lenia 程序；这里保留同一组任务，让评委可以先玩，再看数学证据。</p>
       <code>u_next = clamp(u + dt*(G(K*u) - damping*u), 0, 1)</code>
+
+      <h2>任务模式</h2>
+      <div class="mission-title" id="missionTitle"></div>
+      <p id="missionGoal"></p>
+      <div class="bar"><div class="fill" id="missionBar"></div></div>
+      <div class="button-row">
+        <button id="hint">提示</button>
+        <button id="nextMission">下一任务</button>
+      </div>
+      <div class="notice" id="missionFeedback"></div>
+      <div class="mission-list" id="missionList"></div>
 
       <h2>控制</h2>
       <select id="preset">
@@ -272,12 +304,12 @@
       <div class="stage">
         <canvas id="canvas" width="256" height="256"></canvas>
       </div>
-      <div class="caption">点击或拖动画布可注入生命量。参数变化会立即重置当前规则并实时重算。</div>
+      <div class="caption">点击或拖动画布可注入生命量。完成任务后再查看右侧数学卡片和指标。</div>
     </main>
 
     <aside class="right">
-      <h2>看什么</h2>
-      <p>观察同一公式如何从不同初始条件生成漂移、耦合、尺度变化、湍动和衰退。</p>
+      <h2>数学卡片</h2>
+      <p id="mathCard">先完成当前任务，数学解释会跟着任务反馈出现。</p>
       <h2>变量含义</h2>
       <p><b>u</b> 是当前生命量；<b>K*u</b> 是邻域卷积；<b>G</b> 是增长函数；<b>damping</b> 是阻尼。</p>
       <h2>指标</h2>
@@ -301,6 +333,19 @@
     let running = true;
     let stepCount = 0;
     let seed = 1001;
+    let latestMetrics = { mass: 0, entropy: 0, stability: 0, vitality: 0, active: 0 };
+
+    const missions = [
+      { id: 'wake_field', title: '唤醒生命场', preset: 'orbital', goal: '运行至少 60 步，并保持可见活跃区域。', hint: '点击运行，先观察边界自己移动。', takeaway: 'Lenia 不是视频，每一步都由同一个局部规则实时计算。' },
+      { id: 'shape_life', title: '塑造生命', preset: 'soup', goal: '点击或拖动画布，增加新的活跃区域。', hint: '在画布上点一下，相当于给场加入生命量。', takeaway: '局部加入的生命量会进入同一张场，后续仍由同一个规则演化。' },
+      { id: 'tune_rule', title: '半径挑战', preset: 'ring', goal: '改变一个参数后运行 80 步，观察指标变化。', hint: '轻微改变卷积半径或增长中心，再点击运行。', takeaway: '参数会改变邻域平均和增长响应，因此会改变形态。' },
+      { id: 'same_field', title: '证明同一数据', preset: 'twin', goal: '看过数学原始图和艺术表达图，并把鼠标移到画面上检查同一点。', hint: '切换显示方式，然后移动鼠标到画布上。', takeaway: '艺术表达图只改变颜色和轮廓映射，不改变底层 u 值。' },
+      { id: 'evidence_report', title: '生成证据报告', preset: 'coral', goal: '复制分享链接或导出 PNG，保存当前状态。', hint: '点击复制链接或导出 PNG。', takeaway: '证据把 seed、参数、步数和当前画面联系起来。' }
+    ];
+    let missionIndex = 0;
+    let completedMissions = new Set();
+    let missionState = null;
+    let hintVisible = false;
 
     const controls = {
       preset: document.getElementById('preset'),
@@ -485,6 +530,9 @@
     function byte(v) { return Math.round(Math.max(0, Math.min(1, v)) * 255); }
 
     function updateMetrics(mass, entropy, stability, vitality) {
+      let active = 0;
+      for (const v of field) if (v > 0.08) active++;
+      latestMetrics = { mass, entropy, stability, vitality, active };
       setMetric('mass', mass);
       setMetric('entropy', entropy);
       setMetric('stability', stability);
@@ -492,6 +540,7 @@
       document.getElementById('seedLabel').textContent = `种子 ${seed}`;
       document.getElementById('stepLabel').textContent = `步数 ${stepCount}`;
       document.getElementById('phaseLabel').textContent = `阶段 ${phaseLabel(mass, entropy, stability, vitality)}`;
+      updateMission();
     }
 
     function setMetric(id, value) {
@@ -506,6 +555,86 @@
       if ((1 - stability) > 0.18 && entropy > 0.42) return '湍动';
       if (vitality > 0.58) return '增长';
       return '漂移';
+    }
+
+    function resetMissionState() {
+      missionState = {
+        startStep: stepCount,
+        startActive: latestMetrics.active,
+        edited: false,
+        parameterChanged: false,
+        rawSeen: controls.style.value === 'raw',
+        artisticSeen: controls.style.value === 'artistic',
+        inspected: false,
+        exported: false
+      };
+      hintVisible = false;
+    }
+
+    function missionProgress() {
+      if (!missionState) return 0;
+      const mission = missions[missionIndex];
+      const stepDelta = stepCount - missionState.startStep;
+      const activeDelta = latestMetrics.active - missionState.startActive;
+      if (mission.id === 'wake_field') return Math.min(1, 0.75 * Math.min(1, stepDelta / 60) + 0.25 * Math.min(1, latestMetrics.active / 100));
+      if (mission.id === 'shape_life') return Math.min(1, (missionState.edited ? 0.45 : 0) + 0.55 * Math.min(1, Math.max(0, activeDelta) / 40));
+      if (mission.id === 'tune_rule') return Math.min(1, (missionState.parameterChanged ? 0.45 : 0) + 0.55 * Math.min(1, stepDelta / 80));
+      if (mission.id === 'same_field') return (missionState.rawSeen ? 0.34 : 0) + (missionState.artisticSeen ? 0.33 : 0) + (missionState.inspected ? 0.33 : 0);
+      if (mission.id === 'evidence_report') return missionState.exported ? 1 : 0.15;
+      return 0;
+    }
+
+    function missionComplete() {
+      if (!missionState) return false;
+      const mission = missions[missionIndex];
+      const stepDelta = stepCount - missionState.startStep;
+      const activeDelta = latestMetrics.active - missionState.startActive;
+      if (mission.id === 'wake_field') return stepDelta >= 60 && latestMetrics.active >= 100;
+      if (mission.id === 'shape_life') return missionState.edited && activeDelta >= 40;
+      if (mission.id === 'tune_rule') return missionState.parameterChanged && stepDelta >= 80;
+      if (mission.id === 'same_field') return missionState.rawSeen && missionState.artisticSeen && missionState.inspected;
+      if (mission.id === 'evidence_report') return missionState.exported;
+      return false;
+    }
+
+    function updateMission() {
+      if (!missionState) return;
+      const mission = missions[missionIndex];
+      const complete = missionComplete();
+      if (complete) completedMissions.add(mission.id);
+      document.getElementById('missionTitle').textContent = mission.title;
+      document.getElementById('missionGoal').textContent = mission.goal;
+      document.getElementById('missionBar').style.width = `${missionProgress() * 100}%`;
+      document.getElementById('missionFeedback').textContent = complete
+        ? `成功：${mission.takeaway}`
+        : hintVisible ? `提示：${mission.hint}` : '完成当前目标后会解锁数学卡片。';
+      document.getElementById('mathCard').textContent = complete
+        ? mission.takeaway
+        : '先完成当前任务，数学解释会跟着任务反馈出现。';
+      document.getElementById('nextMission').disabled = missionIndex >= missions.length - 1;
+      renderMissionList();
+    }
+
+    function renderMissionList() {
+      const list = document.getElementById('missionList');
+      list.innerHTML = '';
+      missions.forEach((mission, index) => {
+        const button = document.createElement('button');
+        const status = completedMissions.has(mission.id) ? '已完成' : index === missionIndex ? '进行中' : '未开始';
+        button.textContent = `${status} · ${mission.title}`;
+        button.onclick = () => startMission(index);
+        list.appendChild(button);
+      });
+    }
+
+    function startMission(index) {
+      missionIndex = Math.max(0, Math.min(missions.length - 1, index));
+      controls.preset.value = missions[missionIndex].preset;
+      controls.style.value = 'artistic';
+      resetField();
+      resetMissionState();
+      document.getElementById('status').textContent = `任务开始：${missions[missionIndex].title}`;
+      updateMission();
     }
 
     function tick() {
@@ -545,8 +674,21 @@
       seed = Number(params.get('seed') ?? 1001);
     }
 
-    for (const control of Object.values(controls)) {
+    for (const [key, control] of Object.entries(controls)) {
       control.addEventListener('input', () => {
+        if (key === 'style') {
+          if (missionState) {
+            missionState.rawSeen ||= control.value === 'raw';
+            missionState.artisticSeen ||= control.value === 'artistic';
+          }
+          render();
+          updateHash();
+          updateMission();
+          return;
+        }
+        if (['radius', 'center', 'width', 'damping'].includes(key) && missionState) {
+          missionState.parameterChanged = true;
+        }
         document.getElementById('status').textContent = '参数已改变：当前规则正在实时重新计算。';
         resetField();
       });
@@ -562,6 +704,8 @@
     document.getElementById('copy').addEventListener('click', async () => {
       updateHash();
       await navigator.clipboard.writeText(location.href);
+      if (missionState) missionState.exported = true;
+      updateMission();
       document.getElementById('status').textContent = '已复制当前 Lenia 分享链接。';
     });
     document.getElementById('export').addEventListener('click', () => {
@@ -569,9 +713,17 @@
       a.download = `peterMath_lenia_seed${seed}_step${stepCount}.png`;
       a.href = canvas.toDataURL('image/png');
       a.click();
+      if (missionState) missionState.exported = true;
+      updateMission();
     });
 
     canvas.addEventListener('pointerdown', inject);
+    canvas.addEventListener('pointermove', () => {
+      if (missionState) {
+        missionState.inspected = true;
+        updateMission();
+      }
+    });
     canvas.addEventListener('pointermove', (event) => { if (event.buttons) inject(event); });
     function inject(event) {
       const rect = canvas.getBoundingClientRect();
@@ -580,12 +732,19 @@
       addBlob(x, y, 8, 0.65);
       previous.set(field);
       render();
+      if (missionState) missionState.edited = true;
+      updateMission();
       document.getElementById('status').textContent = '已向 Lenia 场注入生命量。';
     }
 
     loadHash();
     updateLabels();
     resetField();
+    resetMissionState();
+    renderMissionList();
+    updateMission();
+    document.getElementById('hint').addEventListener('click', () => { hintVisible = !hintVisible; updateMission(); });
+    document.getElementById('nextMission').addEventListener('click', () => startMission(missionIndex + 1));
     tick();
   </script>
 </body>

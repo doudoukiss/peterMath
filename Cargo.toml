@@ -2,7 +2,7 @@
 name = "peterMath"
 version = "0.1.0"
 edition = "2021"
-description = "peterMath: a Lenia continuous-field computational artwork"
+description = "peterMath: a Lenia mathematical life teaching game"
 license = "UNLICENSED"
 default-run = "peterMath"
 

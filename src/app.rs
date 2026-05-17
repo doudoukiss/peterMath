@@ -25,6 +25,7 @@ pub struct PeterMathApp {
     running: bool,
     judge_mode: bool,
     show_mode: ShowModeState,
+    teaching_game: TeachingGameState,
     info_tab: MainInfoTab,
     active_major_case: Option<MajorCaseId>,
     tool: InteractionTool,
@@ -95,6 +96,70 @@ enum GridProfile {
     Reference192,
     Detail256,
     GpuPreview512,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum MissionId {
+    WakeField,
+    ShapeLife,
+    TuneRule,
+    SameField,
+    EvidenceReport,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MissionStatus {
+    NotStarted,
+    Active,
+    Completed,
+}
+
+#[derive(Clone, Copy)]
+struct MissionDefinition {
+    id: MissionId,
+    title_zh: &'static str,
+    scenario_zh: &'static str,
+    goal_zh: &'static str,
+    hint_zh: &'static str,
+    success_zh: &'static str,
+    takeaway_zh: &'static str,
+    preset: LeniaPreset,
+    render_style: RenderStyle,
+    step_rate: usize,
+    tool: InteractionTool,
+    start_running: bool,
+}
+
+#[derive(Clone)]
+struct TeachingGameState {
+    active_mission: MissionId,
+    completed: Vec<MissionId>,
+    mission_start_step: u64,
+    mission_start_active: usize,
+    mission_start_mass: f32,
+    mission_start_entropy: f32,
+    mission_start_stability: f32,
+    field_edited_since_start: bool,
+    parameter_changed_since_start: bool,
+    raw_view_seen: bool,
+    artistic_view_seen: bool,
+    inspected_point_seen: bool,
+    exported_evidence: bool,
+    show_hint: bool,
+}
+
+#[derive(Clone, Copy)]
+struct MissionProgress {
+    step_delta: u64,
+    active_count: usize,
+    active_delta: isize,
+    metric_delta: f32,
+    field_edited: bool,
+    parameter_changed: bool,
+    raw_view_seen: bool,
+    artistic_view_seen: bool,
+    inspected_point_seen: bool,
+    exported_evidence: bool,
 }
 
 #[derive(Clone)]
@@ -468,6 +533,152 @@ fn major_cases() -> [MajorCase; 6] {
     ]
 }
 
+fn mission_definitions() -> [MissionDefinition; 5] {
+    [
+        MissionDefinition {
+            id: MissionId::WakeField,
+            title_zh: "唤醒生命场",
+            scenario_zh: "轨道场",
+            goal_zh: "让生命场运行至少 60 步，并保持可见的活跃区域。",
+            hint_zh: "点击运行，观察边界如何自己移动。不要急着调参数。",
+            success_zh: "任务完成：你唤醒了一个由规则实时计算的 Lenia 场。",
+            takeaway_zh: "Lenia 不是视频。每一步都由邻域卷积、增长函数和阻尼重新计算。",
+            preset: LeniaPreset::OrbitalField,
+            render_style: RenderStyle::Artistic,
+            step_rate: 1,
+            tool: InteractionTool::Pan,
+            start_running: true,
+        },
+        MissionDefinition {
+            id: MissionId::ShapeLife,
+            title_zh: "塑造生命",
+            scenario_zh: "稀疏汤",
+            goal_zh: "用画笔或盖章增加活跃区域，让场里出现新的生命量。",
+            hint_zh: "选择“盖章”或“绘制”，在画布上点一下，再让它继续演化。",
+            success_zh: "任务完成：你的局部操作改变了后续演化。",
+            takeaway_zh: "局部加入的生命量会进入同一张场，后续仍由同一个规则演化。",
+            preset: LeniaPreset::SparseSoup,
+            render_style: RenderStyle::Artistic,
+            step_rate: 1,
+            tool: InteractionTool::Stamp,
+            start_running: false,
+        },
+        MissionDefinition {
+            id: MissionId::TuneRule,
+            title_zh: "半径挑战",
+            scenario_zh: "卷积核环",
+            goal_zh: "改变一个 Lenia 参数，运行至少 80 步，并观察指标变化。",
+            hint_zh: "打开专家设置，轻微改变卷积半径或增长中心，再点击运行。",
+            success_zh: "任务完成：同一初始场在新规则下产生了可测差异。",
+            takeaway_zh: "参数不是装饰滑条。卷积半径、增长中心和阻尼会改变邻域平均与增长响应。",
+            preset: LeniaPreset::KernelRing,
+            render_style: RenderStyle::Artistic,
+            step_rate: 1,
+            tool: InteractionTool::Pan,
+            start_running: false,
+        },
+        MissionDefinition {
+            id: MissionId::SameField,
+            title_zh: "证明同一数据",
+            scenario_zh: "双体相遇",
+            goal_zh: "看过数学原始图和艺术表达图，并用检查器查看同一点。",
+            hint_zh: "切换显示方式，然后把鼠标移到画面上看检查器数值。",
+            success_zh: "任务完成：两种画面来自同一张数值场。",
+            takeaway_zh: "艺术表达图只改变颜色、轮廓和脊线映射，不改变底层 u 值。",
+            preset: LeniaPreset::TwinOrganisms,
+            render_style: RenderStyle::Artistic,
+            step_rate: 1,
+            tool: InteractionTool::Pan,
+            start_running: true,
+        },
+        MissionDefinition {
+            id: MissionId::EvidenceReport,
+            title_zh: "生成证据报告",
+            scenario_zh: "珊瑚衰退",
+            goal_zh: "导出可复现状态或证据包，保存当前任务的参数和指标。",
+            hint_zh: "在左侧专家/证据区点击“导出可复现状态”或“证据包”。",
+            success_zh: "任务完成：当前 Lenia 状态已经写成证据文件。",
+            takeaway_zh: "证据文件把 seed、参数、步数、指标和任务状态连到同一帧画面。",
+            preset: LeniaPreset::CoralDrift,
+            render_style: RenderStyle::Artistic,
+            step_rate: 1,
+            tool: InteractionTool::Pan,
+            start_running: false,
+        },
+    ]
+}
+
+fn mission_definition(id: MissionId) -> MissionDefinition {
+    mission_definitions()
+        .into_iter()
+        .find(|mission| mission.id == id)
+        .expect("mission id must exist")
+}
+
+fn mission_completed(id: MissionId, progress: MissionProgress) -> bool {
+    match id {
+        MissionId::WakeField => progress.step_delta >= 60 && progress.active_count >= 100,
+        MissionId::ShapeLife => progress.field_edited && progress.active_delta >= 40,
+        MissionId::TuneRule => {
+            progress.parameter_changed
+                && progress.step_delta >= 80
+                && progress.metric_delta >= 0.005
+        }
+        MissionId::SameField => {
+            progress.raw_view_seen && progress.artistic_view_seen && progress.inspected_point_seen
+        }
+        MissionId::EvidenceReport => progress.exported_evidence,
+    }
+}
+
+fn mission_progress_fraction(id: MissionId, progress: MissionProgress) -> f32 {
+    if mission_completed(id, progress) {
+        return 1.0;
+    }
+    match id {
+        MissionId::WakeField => {
+            let step = progress.step_delta as f32 / 60.0;
+            let active = progress.active_count as f32 / 100.0;
+            (0.75 * step.min(1.0) + 0.25 * active.min(1.0)).clamp(0.0, 0.99)
+        }
+        MissionId::ShapeLife => {
+            let edited = if progress.field_edited { 0.45 } else { 0.0 };
+            let active = (progress.active_delta.max(0) as f32 / 40.0) * 0.55;
+            (edited + active).clamp(0.0, 0.99)
+        }
+        MissionId::TuneRule => {
+            let changed = if progress.parameter_changed {
+                0.35
+            } else {
+                0.0
+            };
+            let steps = (progress.step_delta as f32 / 80.0).min(1.0) * 0.45;
+            let metric = (progress.metric_delta / 0.005).min(1.0) * 0.20;
+            (changed + steps + metric).clamp(0.0, 0.99)
+        }
+        MissionId::SameField => {
+            let mut score: f32 = 0.0;
+            if progress.raw_view_seen {
+                score += 0.34;
+            }
+            if progress.artistic_view_seen {
+                score += 0.33;
+            }
+            if progress.inspected_point_seen {
+                score += 0.33;
+            }
+            score.clamp(0.0, 0.99)
+        }
+        MissionId::EvidenceReport => {
+            if progress.exported_evidence {
+                1.0
+            } else {
+                0.15
+            }
+        }
+    }
+}
+
 impl PeterMathApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         configure_style(&cc.egui_ctx);
@@ -475,7 +686,8 @@ impl PeterMathApp {
         let render_style = RenderStyle::Artistic;
         let lenia = LeniaSim::new(width, width, 1001);
         let inspected_lenia = Some(lenia.inspect_point(width / 2, width / 2));
-        let metric_history = vec![MetricHistorySample::from_metrics(0, lenia.metrics())];
+        let initial_metrics = lenia.metrics();
+        let metric_history = vec![MetricHistorySample::from_metrics(0, initial_metrics)];
         let gpu_lenia = cc.wgpu_render_state.as_ref().and_then(|render_state| {
             GpuLeniaArt::new(
                 render_state,
@@ -503,7 +715,13 @@ impl PeterMathApp {
             prefer_gpu_lenia: gpu_ready,
             running: true,
             judge_mode: true,
-            show_mode: ShowModeState::enabled_default(),
+            show_mode: ShowModeState::default(),
+            teaching_game: TeachingGameState::new(
+                MissionId::WakeField,
+                0,
+                initial_metrics,
+                render_style,
+            ),
             info_tab: MainInfoTab::ShowNarration,
             active_major_case: Some(MajorCaseId::OrbitalField),
             tool: InteractionTool::Pan,
@@ -539,9 +757,9 @@ impl PeterMathApp {
             comparison_baseline_texture: None,
             comparison_variant_texture: None,
             status: if gpu_ready {
-                "GPU Lenia 已启用。演示会自动播放，手动改参数会暂停并实时重算。".to_owned()
+                "任务模式已开始：先让生命场运行，完成“唤醒生命场”。".to_owned()
             } else {
-                "当前使用 CPU 参考模式。GPU Lenia 不可用，但作品仍可运行。".to_owned()
+                "任务模式已开始：当前使用 CPU 参考模式，仍可完成所有任务。".to_owned()
             },
             last_tick: Instant::now(),
         }
@@ -629,6 +847,132 @@ impl PeterMathApp {
             previous,
             self.active_region(),
         )
+    }
+
+    fn current_mission_definition(&self) -> MissionDefinition {
+        mission_definition(self.teaching_game.active_mission)
+    }
+
+    fn current_mission_progress(&self) -> MissionProgress {
+        let metrics = self.active_metrics();
+        let metric_delta = (metrics.mass - self.teaching_game.mission_start_mass).abs()
+            + (metrics.entropy - self.teaching_game.mission_start_entropy).abs()
+            + (metrics.stability - self.teaching_game.mission_start_stability).abs();
+        MissionProgress {
+            step_delta: self
+                .step_count
+                .saturating_sub(self.teaching_game.mission_start_step),
+            active_count: metrics.active,
+            active_delta: metrics.active as isize
+                - self.teaching_game.mission_start_active as isize,
+            metric_delta,
+            field_edited: self.teaching_game.field_edited_since_start,
+            parameter_changed: self.teaching_game.parameter_changed_since_start,
+            raw_view_seen: self.teaching_game.raw_view_seen,
+            artistic_view_seen: self.teaching_game.artistic_view_seen,
+            inspected_point_seen: self.teaching_game.inspected_point_seen,
+            exported_evidence: self.teaching_game.exported_evidence,
+        }
+    }
+
+    fn current_mission_status(&self) -> MissionStatus {
+        let id = self.teaching_game.active_mission;
+        if self.teaching_game.is_completed(id)
+            || mission_completed(id, self.current_mission_progress())
+        {
+            MissionStatus::Completed
+        } else if self.step_count == self.teaching_game.mission_start_step
+            && !self.teaching_game.field_edited_since_start
+            && !self.teaching_game.parameter_changed_since_start
+            && !self.teaching_game.exported_evidence
+        {
+            MissionStatus::NotStarted
+        } else {
+            MissionStatus::Active
+        }
+    }
+
+    fn update_teaching_progress(&mut self) {
+        let id = self.teaching_game.active_mission;
+        let progress = self.current_mission_progress();
+        if mission_completed(id, progress) && !self.teaching_game.is_completed(id) {
+            let mission = mission_definition(id);
+            self.teaching_game.complete(id);
+            self.status = mission.success_zh.to_owned();
+        }
+    }
+
+    fn start_teaching_mission(&mut self, id: MissionId) {
+        let mission = mission_definition(id);
+        self.show_mode.enabled = false;
+        self.show_mode.playing = false;
+        self.show_mode.finished = false;
+        self.render_style = mission.render_style;
+        self.steps_per_frame = mission.step_rate;
+        self.active_preset = mission.preset;
+        self.active_major_case = MajorCaseId::from_preset(mission.preset);
+        self.judge_mode = true;
+        self.show_active_region_overlay = true;
+        self.show_kernel_overlay = true;
+        self.tool = mission.tool;
+        self.running = mission.start_running;
+        self.step_count = 0;
+        self.tick_accumulator = Duration::ZERO;
+        self.gpu_cpu_sync_counter = 0;
+        self.clear_comparison_result();
+
+        let size = self.grid_profile.size();
+        if self.lenia.size() != (size, size) {
+            self.lenia.resize(size, size);
+        }
+        self.lenia.reset_preset(mission.preset.id());
+        let (w, h) = self.lenia.size();
+        self.inspected_lenia = Some(self.lenia.inspect_point(w / 2, h / 2));
+        self.texture = None;
+        self.mark_cpu_texture_dirty();
+        self.sync_gpu_lenia_from_cpu();
+        self.reset_metric_history();
+        let metrics = self.active_metrics();
+        self.teaching_game
+            .reset_for_mission(id, self.step_count, metrics, self.render_style);
+        self.info_tab = MainInfoTab::ShowNarration;
+        self.status = format!("任务开始：{}。{}", mission.title_zh, mission.goal_zh);
+    }
+
+    fn next_mission_id(&self) -> Option<MissionId> {
+        let missions = mission_definitions();
+        let index = missions
+            .iter()
+            .position(|mission| mission.id == self.teaching_game.active_mission)?;
+        missions.get(index + 1).map(|mission| mission.id)
+    }
+
+    fn teaching_mission_json(&self) -> serde_json::Value {
+        let mission = self.current_mission_definition();
+        let progress = self.current_mission_progress();
+        let progress_value = mission_progress_fraction(self.teaching_game.active_mission, progress);
+        let mut completed = self.teaching_game.completed.clone();
+        if mission_completed(self.teaching_game.active_mission, progress)
+            && !completed.contains(&self.teaching_game.active_mission)
+        {
+            completed.push(self.teaching_game.active_mission);
+        }
+        let completed_missions: Vec<&'static str> =
+            completed.iter().map(|mission| mission.id()).collect();
+        json!({
+            "mission_id": mission.id.id(),
+            "title_zh": mission.title_zh,
+            "scenario_zh": mission.scenario_zh,
+            "status": self.current_mission_status().id(),
+            "status_zh": self.current_mission_status().label(),
+            "progress": progress_value,
+            "completed_missions": completed_missions,
+            "goal_zh": mission.goal_zh,
+            "takeaway_zh": mission.takeaway_zh,
+            "step_delta": progress.step_delta,
+            "active_delta": progress.active_delta,
+            "metric_delta": progress.metric_delta,
+        })
     }
 
     fn previous_metric_history(&self, current: Metrics) -> Option<Metrics> {
@@ -916,6 +1260,7 @@ impl PeterMathApp {
                     step_count: self.step_count,
                     grid_width: w,
                     grid_height: h,
+                    teaching_mission: Some(self.teaching_mission_json()),
                     parameters: self.parameter_json(),
                     metrics,
                 },
@@ -992,6 +1337,7 @@ impl PeterMathApp {
                     step_count: self.step_count,
                     grid_width: export_state.size,
                     grid_height: export_state.size,
+                    teaching_mission: Some(self.teaching_mission_json()),
                     parameters: export_state.parameters,
                     metrics: export_state.metrics,
                 },
@@ -1006,6 +1352,8 @@ impl PeterMathApp {
 
     fn export_share_state(&mut self) {
         self.update_performance_metadata();
+        let previous_exported = self.teaching_game.exported_evidence;
+        self.teaching_game.exported_evidence = true;
         let result = (|| -> anyhow::Result<()> {
             let (w, h, metrics, parameters) = if self.gpu_lenia_active() {
                 let gpu = self
@@ -1033,19 +1381,28 @@ impl PeterMathApp {
                     step_count: self.step_count,
                     grid_width: w,
                     grid_height: h,
+                    teaching_mission: Some(self.teaching_mission_json()),
                     parameters,
                     metrics,
                 },
             )
         })();
         self.status = match result {
-            Ok(()) => "已导出 peterMath_share_state.json。".to_owned(),
-            Err(err) => format!("可复现状态导出失败：{err}"),
+            Ok(()) => {
+                self.update_teaching_progress();
+                "已导出 peterMath_share_state.json。".to_owned()
+            }
+            Err(err) => {
+                self.teaching_game.exported_evidence = previous_exported;
+                format!("可复现状态导出失败：{err}")
+            }
         };
     }
 
     fn export_evidence_pack(&mut self) {
         self.update_performance_metadata();
+        let previous_exported = self.teaching_game.exported_evidence;
+        self.teaching_game.exported_evidence = true;
         let stem = format!(
             "peterMath_Lenia_seed{}_step{}",
             self.active_seed(),
@@ -1096,6 +1453,7 @@ impl PeterMathApp {
                     step_count: self.step_count,
                     grid_width: w,
                     grid_height: h,
+                    teaching_mission: Some(self.teaching_mission_json()),
                     parameters,
                     metrics,
                 },
@@ -1103,15 +1461,21 @@ impl PeterMathApp {
         })();
 
         self.status = match result {
-            Ok(pack) => format!(
-                "已导出证据包：{}（PNG {}，JSON {}，可复现状态 {}，摘要 {}）",
-                pack.dir.display(),
-                pack.snapshot_png.display(),
-                pack.parameters_json.display(),
-                pack.share_state_json.display(),
-                pack.summary_md.display()
-            ),
-            Err(err) => format!("证据包导出失败：{err}"),
+            Ok(pack) => {
+                self.update_teaching_progress();
+                format!(
+                    "已导出证据包：{}（PNG {}，JSON {}，可复现状态 {}，摘要 {}）",
+                    pack.dir.display(),
+                    pack.snapshot_png.display(),
+                    pack.parameters_json.display(),
+                    pack.share_state_json.display(),
+                    pack.summary_md.display()
+                )
+            }
+            Err(err) => {
+                self.teaching_game.exported_evidence = previous_exported;
+                format!("证据包导出失败：{err}")
+            }
         };
     }
 
@@ -1289,6 +1653,7 @@ impl PeterMathApp {
         }
         self.refresh_lenia_inspection();
         self.record_metric_history();
+        self.update_teaching_progress();
     }
 
     fn change_brush_radius(&mut self, delta: f32) {
@@ -1424,6 +1789,7 @@ impl PeterMathApp {
         self.push_lenia_history();
         self.comparison_parameter
             .apply(&mut self.lenia, self.comparison_value);
+        self.teaching_game.parameter_changed_since_start = true;
         self.step_count = 0;
         self.mark_cpu_texture_dirty();
         self.sync_gpu_lenia_from_cpu();
@@ -1524,10 +1890,14 @@ impl PeterMathApp {
             }
             InteractionTool::Pan => {}
         }
+        if matches!(self.tool, InteractionTool::Draw | InteractionTool::Stamp) {
+            self.teaching_game.field_edited_since_start = true;
+        }
         self.sync_gpu_lenia_from_cpu();
         self.mark_cpu_texture_dirty();
         self.refresh_lenia_inspection();
         self.record_metric_history();
+        self.update_teaching_progress();
     }
 
     fn update_lenia_inspection_from_canvas(&mut self, rect: egui::Rect, response: &egui::Response) {
@@ -1544,6 +1914,8 @@ impl PeterMathApp {
         let x = ((pos.x - rect.min.x) / rect.width() * w as f32).clamp(0.0, w as f32 - 1.0);
         let y = ((pos.y - rect.min.y) / rect.height() * h as f32).clamp(0.0, h as f32 - 1.0);
         self.inspected_lenia = Some(self.lenia.inspect_point(x as usize, y as usize));
+        self.teaching_game.inspected_point_seen = true;
+        self.update_teaching_progress();
     }
 
     fn draw_lenia_inspection_overlay(&self, painter: &egui::Painter, rect: egui::Rect) {
@@ -1915,59 +2287,63 @@ impl PeterMathApp {
         ui.separator();
     }
 
+    fn draw_teaching_mission_controls(&mut self, ui: &mut egui::Ui) {
+        let mission = self.current_mission_definition();
+        let progress = self.current_mission_progress();
+        let progress_value = mission_progress_fraction(self.teaching_game.active_mission, progress);
+        ui.heading("任务模式");
+        ui.strong(mission.title_zh);
+        ui.small(format!("场景：{}", mission.scenario_zh));
+        ui.add(egui::ProgressBar::new(progress_value).text(format!(
+            "{} · {:.0}%",
+            self.current_mission_status().label(),
+            progress_value * 100.0
+        )));
+        ui.label(mission.goal_zh);
+
+        ui.horizontal(|ui| {
+            if ui.button("重玩本任务").clicked() {
+                self.start_teaching_mission(self.teaching_game.active_mission);
+            }
+            let enabled = self.next_mission_id().is_some();
+            if ui
+                .add_enabled(enabled, egui::Button::new("下一任务"))
+                .clicked()
+            {
+                if let Some(next) = self.next_mission_id() {
+                    self.start_teaching_mission(next);
+                }
+            }
+        });
+
+        ui.separator();
+        for mission in mission_definitions() {
+            let is_active = mission.id == self.teaching_game.active_mission;
+            let marker = if self.teaching_game.is_completed(mission.id) {
+                "已完成"
+            } else if is_active {
+                "进行中"
+            } else {
+                "未开始"
+            };
+            if ui
+                .selectable_label(is_active, format!("{} · {}", marker, mission.title_zh))
+                .clicked()
+            {
+                self.start_teaching_mission(mission.id);
+            }
+        }
+    }
+
     fn draw_left_panel(&mut self, ui: &mut egui::Ui) {
         ui.heading("peterMath");
-        ui.label("Lenia 连续生命场计算艺术");
-        ui.small("美感来自场、卷积核、增长函数、阻尼和可复现种子。");
+        ui.label("Lenia 数学生命教学游戏");
+        ui.small("先玩任务，再看数学卡片和证据。");
         ui.separator();
-        self.draw_show_mode_controls(ui);
+        self.draw_teaching_mission_controls(ui);
         ui.separator();
 
-        let mut selected_render_style = self.render_style;
-        egui::ComboBox::from_label("显示方式")
-            .selected_text(selected_render_style.label())
-            .show_ui(ui, |ui| {
-                ui.selectable_value(
-                    &mut selected_render_style,
-                    RenderStyle::RawMath,
-                    RenderStyle::RawMath.label(),
-                );
-                ui.selectable_value(
-                    &mut selected_render_style,
-                    RenderStyle::Artistic,
-                    RenderStyle::Artistic.label(),
-                );
-            });
-        if selected_render_style != self.render_style {
-            self.pause_show_for_manual_interaction();
-            self.render_style = selected_render_style;
-            self.mark_cpu_texture_dirty();
-            self.sync_gpu_lenia_from_cpu();
-        }
-
-        ui.checkbox(&mut self.judge_mode, "评审讲解模式");
-        ui.checkbox(&mut self.dev_diagnostics, "开发诊断");
-        ui.checkbox(&mut self.show_active_region_overlay, "显示活跃区域")
-            .on_hover_text("显示自动检测的活跃边界和中心点。");
-        if self.gpu_lenia.is_some() {
-            let previous = self.prefer_gpu_lenia;
-            ui.checkbox(&mut self.prefer_gpu_lenia, "GPU 高质量 Lenia");
-            if previous != self.prefer_gpu_lenia {
-                self.pause_show_for_manual_interaction();
-                self.mark_cpu_texture_dirty();
-                self.tick_accumulator = Duration::ZERO;
-                self.sync_gpu_lenia_from_cpu();
-            }
-        } else {
-            ui.label("GPU 高质量 Lenia：不可用");
-        }
-        if ui
-            .add(egui::Slider::new(&mut self.steps_per_frame, 1..=8).text("演化速度"))
-            .changed()
-        {
-            self.pause_show_for_manual_interaction();
-        }
-
+        ui.heading("行动");
         ui.horizontal(|ui| {
             if ui
                 .button(if self.running { "暂停" } else { "运行" })
@@ -1990,8 +2366,32 @@ impl PeterMathApp {
             }
         });
 
+        let mut selected_render_style = self.render_style;
+        egui::ComboBox::from_label("显示方式")
+            .selected_text(selected_render_style.label())
+            .show_ui(ui, |ui| {
+                ui.selectable_value(
+                    &mut selected_render_style,
+                    RenderStyle::RawMath,
+                    RenderStyle::RawMath.label(),
+                );
+                ui.selectable_value(
+                    &mut selected_render_style,
+                    RenderStyle::Artistic,
+                    RenderStyle::Artistic.label(),
+                );
+            });
+        if selected_render_style != self.render_style {
+            self.pause_show_for_manual_interaction();
+            self.render_style = selected_render_style;
+            self.teaching_game.mark_render_style_seen(self.render_style);
+            self.mark_cpu_texture_dirty();
+            self.sync_gpu_lenia_from_cpu();
+            self.update_teaching_progress();
+        }
+
         ui.separator();
-        ui.heading("交互实验室");
+        ui.heading("工具");
         ui.horizontal_wrapped(|ui| {
             for tool in InteractionTool::ALL {
                 let shortcut = match tool {
@@ -2004,20 +2404,6 @@ impl PeterMathApp {
                     .on_hover_text(shortcut);
             }
         });
-
-        egui::ComboBox::from_label("Lenia 预设")
-            .selected_text(self.active_preset.label())
-            .show_ui(ui, |ui| {
-                let mut selected = self.active_preset;
-                for preset in LeniaPreset::ALL {
-                    ui.selectable_value(&mut selected, preset, preset.label());
-                }
-                if selected != self.active_preset {
-                    self.pause_show_for_manual_interaction();
-                    self.load_lenia_preset(selected);
-                }
-            });
-        ui.small(self.active_preset.description());
 
         egui::ComboBox::from_label("盖章形状")
             .selected_text(self.active_stamp.label())
@@ -2039,19 +2425,6 @@ impl PeterMathApp {
             self.pause_show_for_manual_interaction();
         }
 
-        egui::ComboBox::from_label("网格精度")
-            .selected_text(self.grid_profile.label())
-            .show_ui(ui, |ui| {
-                let mut selected = self.grid_profile;
-                for profile in GridProfile::ALL {
-                    ui.selectable_value(&mut selected, profile, profile.label());
-                }
-                if selected != self.grid_profile {
-                    self.pause_show_for_manual_interaction();
-                    self.apply_grid_profile(selected);
-                }
-            });
-
         ui.horizontal(|ui| {
             if ui.button("清空场").clicked() {
                 self.pause_show_for_manual_interaction();
@@ -2062,68 +2435,136 @@ impl PeterMathApp {
                 self.new_lenia_seed();
             }
         });
-        ui.horizontal(|ui| {
-            if ui.button("随机场").clicked() {
-                self.pause_show_for_manual_interaction();
-                self.randomize_lenia_field();
-            }
-            if ui
-                .add_enabled(!self.undo_stack.is_empty(), egui::Button::new("撤销"))
-                .on_hover_text("Z")
-                .clicked()
-            {
-                self.pause_show_for_manual_interaction();
-                self.undo_lenia();
-            }
-            if ui
-                .add_enabled(!self.redo_stack.is_empty(), egui::Button::new("重做"))
-                .on_hover_text("Shift+Z")
-                .clicked()
-            {
-                self.pause_show_for_manual_interaction();
-                self.redo_lenia();
-            }
-        });
         ui.small("Space 运行/暂停 · . 单步 · R 重置 · C 清空 · N 新种子 · [ ] 画笔");
 
         ui.separator();
-        if ui.button("导出截图 + 参数").clicked() {
-            self.export_snapshot();
-        }
-        ui.horizontal(|ui| {
-            if ui.button("导出可复现状态").clicked() {
-                self.export_share_state();
-            }
-            if ui.button("证据包").clicked() {
-                self.export_evidence_pack();
-            }
-        });
+        egui::CollapsingHeader::new("专家/证据")
+            .default_open(false)
+            .show(ui, |ui| {
+                ui.checkbox(&mut self.judge_mode, "显示讲解叠层");
+                ui.checkbox(&mut self.dev_diagnostics, "开发诊断");
+                ui.checkbox(&mut self.show_active_region_overlay, "显示活跃区域")
+                    .on_hover_text("显示自动检测的活跃边界和中心点。");
+
+                if self.gpu_lenia.is_some() {
+                    let previous = self.prefer_gpu_lenia;
+                    ui.checkbox(&mut self.prefer_gpu_lenia, "GPU 高质量 Lenia");
+                    if previous != self.prefer_gpu_lenia {
+                        self.pause_show_for_manual_interaction();
+                        self.mark_cpu_texture_dirty();
+                        self.tick_accumulator = Duration::ZERO;
+                        self.sync_gpu_lenia_from_cpu();
+                    }
+                } else {
+                    ui.label("GPU 高质量 Lenia：不可用");
+                }
+
+                if ui
+                    .add(egui::Slider::new(&mut self.steps_per_frame, 1..=8).text("演化速度"))
+                    .changed()
+                {
+                    self.pause_show_for_manual_interaction();
+                }
+
+                egui::ComboBox::from_label("Lenia 场景")
+                    .selected_text(self.active_preset.label())
+                    .show_ui(ui, |ui| {
+                        let mut selected = self.active_preset;
+                        for preset in LeniaPreset::ALL {
+                            ui.selectable_value(&mut selected, preset, preset.label());
+                        }
+                        if selected != self.active_preset {
+                            self.pause_show_for_manual_interaction();
+                            self.load_lenia_preset(selected);
+                        }
+                    });
+                ui.small(self.active_preset.description());
+
+                egui::ComboBox::from_label("网格精度")
+                    .selected_text(self.grid_profile.label())
+                    .show_ui(ui, |ui| {
+                        let mut selected = self.grid_profile;
+                        for profile in GridProfile::ALL {
+                            ui.selectable_value(&mut selected, profile, profile.label());
+                        }
+                        if selected != self.grid_profile {
+                            self.pause_show_for_manual_interaction();
+                            self.apply_grid_profile(selected);
+                        }
+                    });
+
+                ui.horizontal(|ui| {
+                    if ui.button("随机场").clicked() {
+                        self.pause_show_for_manual_interaction();
+                        self.randomize_lenia_field();
+                    }
+                    if ui
+                        .add_enabled(!self.undo_stack.is_empty(), egui::Button::new("撤销"))
+                        .on_hover_text("Z")
+                        .clicked()
+                    {
+                        self.pause_show_for_manual_interaction();
+                        self.undo_lenia();
+                    }
+                    if ui
+                        .add_enabled(!self.redo_stack.is_empty(), egui::Button::new("重做"))
+                        .on_hover_text("Shift+Z")
+                        .clicked()
+                    {
+                        self.pause_show_for_manual_interaction();
+                        self.redo_lenia();
+                    }
+                });
+
+                ui.separator();
+                self.draw_show_mode_controls(ui);
+
+                ui.separator();
+                if ui.button("导出截图 + 参数").clicked() {
+                    self.export_snapshot();
+                }
+                ui.horizontal(|ui| {
+                    if ui.button("导出可复现状态").clicked() {
+                        self.export_share_state();
+                    }
+                    if ui.button("证据包").clicked() {
+                        self.export_evidence_pack();
+                    }
+                });
+            });
 
         ui.separator();
-        ui.label(format!("系统：{}", lenia_mode_label()));
-        ui.label(format!("后端：{}", self.backend_label()));
-        let (grid_w, grid_h) = self.active_size();
-        ui.label(format!("显示网格：{}x{}", grid_w, grid_h));
-        let (source_w, source_h) = self.lenia.size();
-        ui.label(format!(
-            "源场：{}x{} · {}",
-            source_w,
-            source_h,
-            self.grid_profile.label()
-        ));
-        ui.label(format!("种子：{}", self.active_seed()));
-        ui.label(format!("步数：{}", self.step_count));
-        let phase = self.lenia_phase();
-        ui.label(format!("阶段：{}", phase.label()));
-        ui.small(phase.description());
-        let m = self.active_metrics();
-        ui.label(format!("活跃像素：{}", m.active));
-        ui.label(format!("质量 {:.3} · 熵 {:.3}", m.mass, m.entropy));
-        ui.label(format!(
-            "稳定度 {:.3} · 生命力 {:.3}",
-            m.stability, m.vitality
-        ));
-        ui.label(&self.status);
+        egui::CollapsingHeader::new("当前状态")
+            .default_open(false)
+            .show(ui, |ui| {
+                ui.label(format!("系统：{}", lenia_mode_label()));
+                ui.label(format!("后端：{}", self.backend_label()));
+                let (grid_w, grid_h) = self.active_size();
+                ui.label(format!("显示网格：{}x{}", grid_w, grid_h));
+                let (source_w, source_h) = self.lenia.size();
+                ui.label(format!(
+                    "源场：{}x{} · {}",
+                    source_w,
+                    source_h,
+                    self.grid_profile.label()
+                ));
+                ui.label(format!("种子：{}", self.active_seed()));
+                ui.label(format!("步数：{}", self.step_count));
+                let phase = self.lenia_phase();
+                ui.label(format!("阶段：{}", phase.label()));
+                ui.small(phase.description());
+                let m = self.active_metrics();
+                ui.label(format!("活跃像素：{}", m.active));
+                ui.label(format!("质量 {:.3} · 熵 {:.3}", m.mass, m.entropy));
+                ui.label(format!(
+                    "稳定度 {:.3} · 生命力 {:.3}",
+                    m.stability, m.vitality
+                ));
+                ui.label(&self.status);
+            });
+        if !self.status.is_empty() {
+            ui.label(&self.status);
+        }
     }
 
     fn draw_right_panel(&mut self, ui: &mut egui::Ui) {
@@ -2139,7 +2580,11 @@ impl PeterMathApp {
         ui.separator();
         match self.info_tab {
             MainInfoTab::ShowNarration => {
-                self.draw_show_mode_narration(ui);
+                if self.show_mode.enabled {
+                    self.draw_show_mode_narration(ui);
+                } else {
+                    self.draw_mission_feedback(ui);
+                }
                 self.draw_compact_live_diagnostics(ui);
                 return;
             }
@@ -2176,11 +2621,13 @@ impl PeterMathApp {
             .on_hover_text("在画面上显示被检查点的邻域范围。");
         if lenia_changed {
             self.pause_show_for_manual_interaction();
+            self.teaching_game.parameter_changed_since_start = true;
             self.sync_gpu_lenia_from_cpu();
             self.step_count = 0;
             self.mark_cpu_texture_dirty();
             self.refresh_lenia_inspection();
             self.reset_metric_history();
+            self.update_teaching_progress();
         }
 
         ui.separator();
@@ -2237,12 +2684,21 @@ impl PeterMathApp {
                     });
                     ui.small(scene.narration.conclusion_zh);
                 } else {
+                    let mission = self.current_mission_definition();
+                    let progress = mission_progress_fraction(
+                        self.teaching_game.active_mission,
+                        self.current_mission_progress(),
+                    );
                     ui.horizontal_wrapped(|ui| {
-                        ui.colored_label(Color32::from_rgb(100, 232, 218), "手动实验");
-                        ui.strong(self.active_preset.label());
+                        ui.colored_label(Color32::from_rgb(100, 232, 218), "任务模式");
+                        ui.strong(mission.title_zh);
                         ui.separator();
-                        ui.label("每个点根据邻域卷积和增长函数更新，画面由同一数值场实时生成。");
+                        ui.label(mission.goal_zh);
                     });
+                    ui.add(
+                        egui::ProgressBar::new(progress)
+                            .text(format!("任务进度 {:.0}%", progress * 100.0)),
+                    );
                 }
                 ui.small(format!(
                     "当前阶段：{} · {}",
@@ -2284,9 +2740,77 @@ impl PeterMathApp {
         }
     }
 
+    fn draw_mission_feedback(&mut self, ui: &mut egui::Ui) {
+        let mission = self.current_mission_definition();
+        let progress = self.current_mission_progress();
+        let progress_value = mission_progress_fraction(self.teaching_game.active_mission, progress);
+        let completed = mission_completed(self.teaching_game.active_mission, progress)
+            || self
+                .teaching_game
+                .is_completed(self.teaching_game.active_mission);
+
+        ui.heading("任务反馈");
+        ui.small(mission.scenario_zh);
+        ui.strong(mission.title_zh);
+        ui.add(egui::ProgressBar::new(progress_value).text(format!(
+            "{} · {:.0}%",
+            self.current_mission_status().label(),
+            progress_value * 100.0
+        )));
+        explanation_row(ui, "目标", mission.goal_zh);
+        ui.horizontal(|ui| {
+            if ui.button("提示").clicked() {
+                self.teaching_game.show_hint = !self.teaching_game.show_hint;
+            }
+            if completed {
+                if let Some(next) = self.next_mission_id() {
+                    if ui.button("进入下一任务").clicked() {
+                        self.start_teaching_mission(next);
+                    }
+                }
+            }
+        });
+        if self.teaching_game.show_hint {
+            explanation_row(ui, "提示", mission.hint_zh);
+        }
+        if completed {
+            explanation_row(ui, "成功", mission.success_zh);
+            ui.separator();
+            ui.heading("数学卡片");
+            explanation_row(ui, "本关结论", mission.takeaway_zh);
+            formula_card(
+                ui,
+                "u_next = clamp(u + dt*(G(K*u) - damping*u), 0, 1)",
+                "u 是生命量；K*u 是邻域平均；G 是增长响应；damping 是衰减。",
+                "任务中的操作只改变场、参数或显示方式，下一步仍由同一个 Lenia 规则计算。",
+            );
+        }
+
+        ui.separator();
+        ui.heading("进度细节");
+        ui.label(format!("本任务步数：{}", progress.step_delta));
+        ui.label(format!(
+            "活跃像素：{} · 变化 {}",
+            progress.active_count, progress.active_delta
+        ));
+        ui.label(format!("指标变化：{:.4}", progress.metric_delta));
+        ui.label(format!(
+            "视图：原始 {} / 艺术 {} · 检查器 {}",
+            yes_no(progress.raw_view_seen),
+            yes_no(progress.artistic_view_seen),
+            yes_no(progress.inspected_point_seen)
+        ));
+        ui.label(format!(
+            "操作：塑形 {} · 调参 {} · 导出 {}",
+            yes_no(progress.field_edited),
+            yes_no(progress.parameter_changed),
+            yes_no(progress.exported_evidence)
+        ));
+    }
+
     fn draw_major_cases_panel(&mut self, ui: &mut egui::Ui) {
-        ui.heading("主要情况");
-        ui.small("这些案例覆盖 Lenia 的稳定、漂移、尺度、湍动和衰退。评委无需调参即可载入。");
+        ui.heading("关卡场景");
+        ui.small("这些场景是任务使用的确定性 Lenia 初始条件。评委无需手动找参数。");
         ui.separator();
         for case in major_cases() {
             egui::Frame::group(ui.style()).show(ui, |ui| {
@@ -2593,13 +3117,16 @@ impl eframe::App for PeterMathApp {
             update_duration = update_start.elapsed();
             ctx.request_repaint_after(TARGET_TICK);
         }
+        self.update_teaching_progress();
 
         egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 let (grid_w, grid_h) = self.active_size();
                 ui.strong("peterMath");
                 ui.separator();
-                ui.label(lenia_mode_label());
+                ui.label("任务模式");
+                ui.separator();
+                ui.label(self.current_mission_definition().title_zh);
                 ui.separator();
                 ui.label(self.backend_label());
                 ui.separator();
@@ -2738,6 +3265,91 @@ impl ShowModeState {
             scene_elapsed: 0.0,
             total_elapsed: 0.0,
             applied_scene_index: None,
+        }
+    }
+}
+
+impl TeachingGameState {
+    fn new(
+        active_mission: MissionId,
+        mission_start_step: u64,
+        metrics: Metrics,
+        render_style: RenderStyle,
+    ) -> Self {
+        Self {
+            active_mission,
+            completed: Vec::new(),
+            mission_start_step,
+            mission_start_active: metrics.active,
+            mission_start_mass: metrics.mass,
+            mission_start_entropy: metrics.entropy,
+            mission_start_stability: metrics.stability,
+            field_edited_since_start: false,
+            parameter_changed_since_start: false,
+            raw_view_seen: render_style == RenderStyle::RawMath,
+            artistic_view_seen: render_style == RenderStyle::Artistic,
+            inspected_point_seen: false,
+            exported_evidence: false,
+            show_hint: false,
+        }
+    }
+
+    fn reset_for_mission(
+        &mut self,
+        active_mission: MissionId,
+        mission_start_step: u64,
+        metrics: Metrics,
+        render_style: RenderStyle,
+    ) {
+        let completed = self.completed.clone();
+        *self = Self::new(active_mission, mission_start_step, metrics, render_style);
+        self.completed = completed;
+    }
+
+    fn mark_render_style_seen(&mut self, render_style: RenderStyle) {
+        match render_style {
+            RenderStyle::RawMath => self.raw_view_seen = true,
+            RenderStyle::Artistic => self.artistic_view_seen = true,
+        }
+    }
+
+    fn is_completed(&self, id: MissionId) -> bool {
+        self.completed.contains(&id)
+    }
+
+    fn complete(&mut self, id: MissionId) {
+        if !self.is_completed(id) {
+            self.completed.push(id);
+        }
+    }
+}
+
+impl MissionId {
+    fn id(self) -> &'static str {
+        match self {
+            Self::WakeField => "wake_field",
+            Self::ShapeLife => "shape_life",
+            Self::TuneRule => "tune_rule",
+            Self::SameField => "same_field",
+            Self::EvidenceReport => "evidence_report",
+        }
+    }
+}
+
+impl MissionStatus {
+    fn id(self) -> &'static str {
+        match self {
+            Self::NotStarted => "not_started",
+            Self::Active => "active",
+            Self::Completed => "completed",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::NotStarted => "未开始",
+            Self::Active => "进行中",
+            Self::Completed => "已完成",
         }
     }
 }
@@ -2985,9 +3597,9 @@ impl VariantParameter {
 impl MainInfoTab {
     fn label(self) -> &'static str {
         match self {
-            Self::ShowNarration => "演示讲解",
-            Self::MajorCases => "主要情况",
-            Self::ParametersDiagnostics => "参数/诊断",
+            Self::ShowNarration => "任务反馈",
+            Self::MajorCases => "关卡场景",
+            Self::ParametersDiagnostics => "专家/证据",
         }
     }
 }
@@ -3248,6 +3860,14 @@ fn duration_ms(duration: Duration) -> f32 {
     duration.as_secs_f32() * 1000.0
 }
 
+fn yes_no(value: bool) -> &'static str {
+    if value {
+        "是"
+    } else {
+        "否"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3293,6 +3913,87 @@ mod tests {
             assert!((1..=8).contains(&case.step_rate));
         }
         assert_eq!(ids.len(), 6);
+    }
+
+    #[test]
+    fn teaching_missions_have_complete_metadata_in_order() {
+        let missions = mission_definitions();
+        assert_eq!(missions[0].id, MissionId::WakeField);
+        assert_eq!(missions[1].id, MissionId::ShapeLife);
+        assert_eq!(missions[2].id, MissionId::TuneRule);
+        assert_eq!(missions[3].id, MissionId::SameField);
+        assert_eq!(missions[4].id, MissionId::EvidenceReport);
+
+        let mut ids = HashSet::new();
+        for mission in missions {
+            assert!(ids.insert(mission.id.id()));
+            assert!(!mission.title_zh.is_empty());
+            assert!(!mission.scenario_zh.is_empty());
+            assert!(!mission.goal_zh.is_empty());
+            assert!(!mission.hint_zh.is_empty());
+            assert!(!mission.success_zh.is_empty());
+            assert!(!mission.takeaway_zh.is_empty());
+            assert!((1..=8).contains(&mission.step_rate));
+        }
+        assert_eq!(ids.len(), 5);
+    }
+
+    #[test]
+    fn mission_completion_logic_is_pure_and_specific() {
+        let base = MissionProgress {
+            step_delta: 0,
+            active_count: 0,
+            active_delta: 0,
+            metric_delta: 0.0,
+            field_edited: false,
+            parameter_changed: false,
+            raw_view_seen: false,
+            artistic_view_seen: false,
+            inspected_point_seen: false,
+            exported_evidence: false,
+        };
+        assert!(!mission_completed(MissionId::WakeField, base));
+        assert!(mission_completed(
+            MissionId::WakeField,
+            MissionProgress {
+                step_delta: 60,
+                active_count: 100,
+                ..base
+            }
+        ));
+        assert!(mission_completed(
+            MissionId::ShapeLife,
+            MissionProgress {
+                active_delta: 40,
+                field_edited: true,
+                ..base
+            }
+        ));
+        assert!(mission_completed(
+            MissionId::TuneRule,
+            MissionProgress {
+                step_delta: 80,
+                metric_delta: 0.006,
+                parameter_changed: true,
+                ..base
+            }
+        ));
+        assert!(mission_completed(
+            MissionId::SameField,
+            MissionProgress {
+                raw_view_seen: true,
+                artistic_view_seen: true,
+                inspected_point_seen: true,
+                ..base
+            }
+        ));
+        assert!(mission_completed(
+            MissionId::EvidenceReport,
+            MissionProgress {
+                exported_evidence: true,
+                ..base
+            }
+        ));
     }
 
     #[test]

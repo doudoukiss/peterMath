@@ -1,11 +1,11 @@
 peterMath current context
 =========================
 
-The project has converged to one competition identity: Lenia as a living mathematical field.
+The project has converged to one competition identity: a Lenia mathematical life teaching game.
 
 Goal
 ----
-Create an elegant computational artwork that persuades judges through beauty and mathematical clarity. The artwork should show that local field rules can generate coherent form, motion, instability, decay, and evidence that can be inspected and reproduced.
+Create a playable teaching game that lets judges immediately interact with a living mathematical field. The game should teach that local field rules can generate coherent form, motion, instability, decay, and exportable evidence.
 
 Core idea
 ---------
@@ -23,7 +23,8 @@ Native direction
 - GPU Lenia is the main viewing path.
 - CPU Lenia remains fallback/reference for metrics, inspector, previews, and exports.
 - Chinese UI is primary.
-- The app opens into a guided Lenia show mode, then allows manual experimentation.
+- The app opens into mission-based `任务模式`.
+- Guided Lenia show mode remains a secondary presentation option.
 
 Implemented pillars
 -------------------
@@ -35,20 +36,18 @@ Implemented pillars
 - Metrics: mass, entropy, symmetry, stability, vitality, active region, phase.
 - Rule variant comparison for radius, growth center, growth width, and damping.
 - PNG/JSON snapshot export, share-state JSON, and evidence packs.
-- Preview generation and an offline `web_html/` fallback.
+- Mission progress and an offline `web_html/` fallback.
 
-Show mode direction
--------------------
-The judge should not need to tune parameters first. The app should guide them through a concise Lenia story:
+Mission direction
+-----------------
+The judge should not need to tune parameters first or read a long explanation. The app should guide them through five playable tasks:
 
-1. Lenia is a continuous living field.
-2. Local convolution creates drift.
-3. Two structures influence each other through the same field.
-4. Kernel radius controls visual scale.
-5. Dense fields show growth, saturation, and turbulence.
-6. Damping and boundary conditions create fading.
-7. Exported evidence records the same visible state.
+1. Wake the field by running it.
+2. Shape life with brush or stamp.
+3. Tune one rule and observe metric change.
+4. Prove Raw Math and Artistic views are the same data.
+5. Export an evidence report.
 
 Repository rule
 ---------------
-Keep the repository focused. Do not reintroduce secondary simulation systems unless the competition strategy changes and the judging story remains clearer than the current Lenia-only direction.
+Keep the repository focused. Do not reintroduce secondary simulation systems unless the competition strategy changes and the teaching game remains clearer than the current Lenia-only direction.

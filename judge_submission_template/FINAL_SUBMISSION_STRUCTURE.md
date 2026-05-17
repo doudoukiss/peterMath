@@ -34,4 +34,4 @@ Recommended final folder:
 
 Do not submit only the source code. Judges should receive the executable plus explanation, preview images, and evidence exports. Include `web_html/` as a fallback only; the native executable remains the primary work.
 
-The final explanation should describe only features that are actually implemented in the submitted `peterMath.exe`: Lenia guided show mode, GPU Lenia, CPU fallback, 数学原始图/艺术表达图, inspector, kernel lens, metrics, active-region analysis, Lenia rule variant comparison, performance diagnostics, and evidence exports.
+The final explanation should describe only features that are actually implemented in the submitted `peterMath.exe`: mission-based teaching game, Lenia scenarios, GPU Lenia, CPU fallback, 数学原始图/艺术表达图, math cards, inspector, kernel lens, metrics, active-region analysis, Lenia rule variant comparison, performance diagnostics, and evidence exports.

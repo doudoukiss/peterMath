@@ -1,7 +1,39 @@
 {
   "schema_version": 1,
   "project": "peterMath",
-  "description": "Judge-facing deterministic presets and stamps used by the native app story.",
+  "description": "Judge-facing deterministic presets, stamps, and missions used by the native teaching game.",
+  "teaching_missions": [
+    {
+      "id": "wake_field",
+      "name": "唤醒生命场",
+      "preset": "orbital_field",
+      "goal": "Run the field for 60 steps and keep visible active mass."
+    },
+    {
+      "id": "shape_life",
+      "name": "塑造生命",
+      "preset": "sparse_soup",
+      "goal": "Use brush or stamp to increase the active region."
+    },
+    {
+      "id": "tune_rule",
+      "name": "半径挑战",
+      "preset": "kernel_ring",
+      "goal": "Change one Lenia parameter and observe metric change."
+    },
+    {
+      "id": "same_field",
+      "name": "证明同一数据",
+      "preset": "twin_organisms",
+      "goal": "View Raw Math and Artistic styles, then inspect one point."
+    },
+    {
+      "id": "evidence_report",
+      "name": "生成证据报告",
+      "preset": "coral_drift",
+      "goal": "Export share state or an evidence pack."
+    }
+  ],
   "lenia_presets": [
     {
       "id": "orbital_field",
