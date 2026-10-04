@@ -56,13 +56,19 @@ peterMath_exports/evidence_seed<seed>_step<step>/
 
 ## Build Windows Artifact
 
-Push this folder as the root of the GitHub repository. The workflow:
+Build and validate the Windows executable locally on a Windows host using the
+existing checks and packaging commands above. Generate the preview images and
+run `scripts/package_submission.py` for the intended Windows output. Keep the
+executable, launchers, docs, assets, previews, templates and offline web fallback
+in the submission folder. Verify the Windows executable and fallback on the
+intended platform before distributing that folder; a macOS build alone does not
+establish Windows readiness.
 
-```text
-.github/workflows/windows-release.yml
-```
-
-builds the release executable, runs checks, generates Lenia preview images, runs `scripts/package_submission.py`, and uploads a `peterMath-windows-x64` artifact containing the executable, launchers, docs, assets, previews, templates, and web fallback.
+The retained `.github/workflows/windows-release.yml` describes the historical
+automated packaging path. GitHub Actions is intentionally disabled, so pushing
+this repository no longer builds or uploads a `peterMath-windows-x64` artifact.
+Historical Actions artifacts were deleted. Publication or submission remains an
+explicit owner action after the actual local packaging and platform checks.
 
 ## Product Constraints
 
